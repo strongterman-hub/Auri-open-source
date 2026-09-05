@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="下载 Auri，让这个会主动联系你的 AI 朋友留在身边。" />
+    <meta name="theme-color" content="#12101f" />
+    <title>下载 Auri</title>
+    <link rel="icon" href="/static/site/assets/auri-icon.png" />
+    <link rel="stylesheet" href="/static/site/site.css?v=20260905-6" />
+    <script src="/static/site/site.js?v=20260905-6" defer></script>
+  </head>
+  <body class="download-page">
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="返回 Auri 首页">
+        <img src="/static/site/assets/auri-icon.png" alt="" width="40" height="40" />
+        <span>Auri</span>
+      </a>
+      <nav aria-label="主导航"><a href="/">返回首页</a></nav>
+    </header>
+
+    <main id="main" class="download-shell">
+      <section class="download-hero" aria-labelledby="download-title">
+        <div class="download-visual" aria-hidden="true">
+          <img src="/static/site/assets/auri-icon.png" alt="" width="184" height="184" />
+        </div>
+
+        <div class="download-copy">
+          <p class="section-kicker">主动找你，慢慢懂你。</p>
+          <h1 id="download-title">下载 Auri</h1>
+          <p class="download-lead"><span>会主动联系你的 AI 朋友。</span><span>陪你聊聊每天的生活。</span></p>
+          <a class="button button-primary download-button" id="download-button" aria-disabled="true">
+            <span id="download-label">正在准备下载</span>
+            <span aria-hidden="true">↓</span>
+          </a>
+          <noscript><a class="noscript-download" href="/v1/update/apk">直接下载 Android 版</a></noscript>
+          <p class="download-support" id="platform-notice">Android 8.0 及以上</p>
+          <p class="download-error" id="download-error" role="status">
+            暂时无法下载，<button id="retry-release" type="button">再试一次</button>
+          </p>
+        </div>
+      </section>
+
+      <aside class="download-qr" aria-label="手机扫码下载">
+        <img src="/static/site/assets/download-qr.png" alt="用 Android 手机扫码打开下载页" width="112" height="112" />
+        <div><strong>用手机扫码</strong><span>直接打开下载页</span></div>
+      </aside>
+    </main>
+
+    <footer class="site-footer download-footer">
+      <a class="brand footer-brand" href="/">
+        <img src="/static/site/assets/auri-icon.png" alt="" width="34" height="34" />
+        <span>Auri</span>
+      </a>
+      <p>会主动联系你的 AI 朋友</p>
+      <p>© 2026 Auri</p>
+    </footer>
+  </body>
+</html>

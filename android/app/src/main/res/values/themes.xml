@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Auri" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/auri_background</item>
+    </style>
+</resources>

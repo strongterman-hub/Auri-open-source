@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auri Debug Console</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Auri Debug Console</h1>
+        <p>一个最小网页入口，用来验证会话、记忆和 Agent 回复链路。</p>
+      </header>
+
+      <section class="panel">
+        <div class="row">
+          <button id="health-btn">Health</button>
+          <button id="session-btn">Create Session</button>
+          <span id="session-id" class="muted">no session</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Memory</h2>
+        <div class="grid">
+          <select id="memory-target">
+            <option value="memory">memory</option>
+            <option value="user">user</option>
+          </select>
+          <select id="memory-action">
+            <option value="add">add</option>
+            <option value="replace">replace</option>
+            <option value="remove">remove</option>
+          </select>
+          <input id="memory-content" placeholder="content / new content" />
+          <input id="memory-old-text" placeholder="old_text (replace/remove)" />
+          <button id="memory-write-btn">Write Memory</button>
+          <button id="memory-read-btn">Read Memory</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Agent</h2>
+        <div class="row">
+          <input id="message-input" placeholder="给 Agent 发一条消息" />
+          <button id="send-btn">Send</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Output</h2>
+        <pre id="output" class="output">Waiting for actions...</pre>
+      </section>
+    </main>
+
+    <script src="/static/debug.js"></script>
+  </body>
+</html>

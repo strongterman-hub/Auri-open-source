@@ -1,0 +1,13 @@
+# Include this location inside your own HTTPS server block.
+# Provision a certificate for your own domain before public use.
+location / {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    client_max_body_size 64m;
+}

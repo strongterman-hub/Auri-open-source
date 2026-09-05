@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auri 日志与消耗监控</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #4c8dff;
+    --green: #2ecc71;
+    --amber: #f1c40f;
+    --red: #e74c3c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 18px; }
+  .muted { color: var(--muted); }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-right: 10px;
+  }
+  .wrap { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .card .value { font-size: 24px; font-weight: 600; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  section { margin-top: 24px; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+  canvas { width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; background: #1f2530; }
+  .pill.chat { background: #14304f; }
+  .pill.compression { background: #3a2b12; }
+  .pill.consolidation { background: #173a2b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Auri 日志与消耗监控</h1>
+  <div>
+    <select id="user-select"><option value="">总体</option></select>
+    <span class="muted" id="generated"></span>
+    <button id="refresh">刷新</button>
+    <button id="logout" style="background:#262b36;margin-left:8px;">退出</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>按用户统计</h2>
+    <div id="by-user"></div>
+  </section>
+
+  <section>
+    <h2>对话轮次（工具调用 & 响应时间）</h2>
+    <div class="muted" id="turns-summary" style="margin-bottom:10px;"></div>
+    <div id="tool-counts" style="margin-bottom:14px;"></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th><th>用户</th><th>模型</th>
+            <th class="num">耗时(ms)</th><th class="num">LLM轮次</th>
+            <th>工具调用</th><th class="num">输入</th><th class="num">输出</th>
+            <th class="num">费用(元)</th><th>状态</th>
+          </tr>
+        </thead>
+        <tbody id="turns-recent"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>每日消耗（元）</h2>
+    <canvas id="chart" height="180"></canvas>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <h2>按模型</h2>
+      <div id="by-model"></div>
+    </div>
+    <div>
+      <h2>按调用类型</h2>
+      <div id="by-kind"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>最近请求</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th><th>模型</th><th>类型</th><th>会话</th>
+            <th class="num">输入(命中/未命中)</th><th class="num">输出</th>
+            <th class="num">耗时(ms)</th><th class="num">费用(元)</th>
+          </tr>
+        </thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>官方费率参考</h2>
+    <div id="pricing"></div>
+  </section>
+</div>
+
+<script>
+async function apiFetch(url, options) {
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    window.location.href = "/admin/login";
+    throw new Error("unauthorized");
+  }
+  return res;
+}
+
+function money(v) {
+  if (v === 0) return "¥0";
+  const s = v.toFixed(6);
+  return "¥" + s.replace(/\.?0+$/, "");
+}
+function num(v) { return (v ?? 0).toLocaleString("zh-CN"); }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+let currentUserId = "";
+
+function kindPill(kind) {
+  const k = esc(kind || "unknown");
+  return `<span class="pill ${k}">${k}</span>`;
+}
+
+async function loadUsage() {
+  const qs = new URLSearchParams({ days: "30", limit: "200" });
+  if (currentUserId) qs.set("user_id", currentUserId);
+  const res = await apiFetch("/admin/api/usage?" + qs.toString());
+  const data = await res.json();
+  const t = data.totals || {};
+  document.getElementById("generated").textContent = "生成于 " + (data.generated_at || "");
+  document.getElementById("cards").innerHTML = [
+    ["累计费用", money(t.cost || 0), "30 天内"],
+    ["输入 tokens", num((t.prompt_tokens || 0)), "命中 " + num(t.cached_tokens || 0) + " / 未命中 " + num(t.uncached_tokens || 0)],
+    ["输出 tokens", num(t.completion_tokens || 0), ""],
+    ["请求次数", num(t.requests || 0), ""],
+  ].map(([label, value, sub]) =>
+    `<div class="card"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`
+  ).join("");
+
+  document.getElementById("by-model").innerHTML = tableRows(
+    ["模型", "请求", "输入", "输出", "费用"],
+    (data.by_model || []).map(m => [m.model, num(m.requests), num(m.prompt_tokens), num(m.completion_tokens), money(m.cost)])
+  );
+  document.getElementById("by-kind").innerHTML = tableRows(
+    ["类型", "请求", "费用"],
+    (data.by_kind || []).map(k => [k.kind, num(k.requests), money(k.cost)])
+  );
+  const select = document.getElementById("user-select");
+  select.innerHTML = '<option value="">总体</option>' + (data.by_user || []).map(u =>
+    `<option value="${esc(u.user_id)}">${esc(u.user_id)}</option>`
+  ).join("");
+  select.value = currentUserId;
+  document.getElementById("by-user").innerHTML = tableRows(
+    ["用户", "请求", "输入(命中/未命中)", "输出", "费用"],
+    (data.by_user || []).map(u => [u.user_id, num(u.requests), num(u.cached_tokens) + " / " + num(u.uncached_tokens), num(u.completion_tokens), money(u.cost)])
+  );
+  document.getElementById("recent").innerHTML = (data.recent || []).map(r =>
+    `<tr><td>${esc(r.ts)}</td><td>${esc(r.model)}</td><td>${kindPill(r.kind)}</td><td class="muted">${esc(r.session_id || "-")}</td>` +
+    `<td class="num">${num(r.cached_tokens)} / ${num(r.uncached_tokens)}</td><td class="num">${num(r.completion_tokens)}</td>` +
+    `<td class="num">${r.duration_ms == null ? "-" : Math.round(r.duration_ms)}</td><td class="num">${money(r.cost)}</td></tr>`
+  ).join("") || '<tr><td colspan="8" class="muted">暂无数据</td></tr>';
+
+  drawChart(data.daily || []);
+}
+
+async function loadTurns() {
+  const qs = new URLSearchParams({ days: "30", limit: "100" });
+  if (currentUserId) qs.set("user_id", currentUserId);
+  const res = await apiFetch("/admin/api/turns?" + qs.toString());
+  const data = await res.json();
+  const t = data.totals || {};
+  document.getElementById("turns-summary").textContent =
+    "轮次 " + num(t.turns) + " · 平均耗时 " + Math.round(t.avg_duration_ms) + "ms · 工具调用 " + num(t.tool_calls) + " · 错误 " + num(t.errors);
+  document.getElementById("tool-counts").innerHTML = (data.tool_counts || []).map(tc =>
+    `<span class="pill">${esc(tc.name)} ×${num(tc.count)}</span> `
+  ).join("");
+  document.getElementById("turns-recent").innerHTML = (data.recent || []).map(r =>
+    `<tr><td>${esc(r.started_at)}</td><td>${esc(r.user_id || "-")}</td><td>${esc(r.model)}</td>` +
+    `<td class="num">${r.duration_ms == null ? "-" : Math.round(r.duration_ms)}</td><td class="num">${num(r.llm_calls)}</td>` +
+    `<td>${(r.tool_calls || []).map(tc => esc(tc.name) + (tc.error ? "⚠" : "")).join(", ") || "-"}</td>` +
+    `<td class="num">${num(r.prompt_tokens)}</td><td class="num">${num(r.completion_tokens)}</td>` +
+    `<td class="num">${money(r.cost)}</td><td>${esc(r.status || "-")}</td></tr>`
+  ).join("") || '<tr><td colspan="10" class="muted">暂无数据</td></tr>';
+}
+
+function tableRows(headers, rows) {
+  const head = `<tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr>`;
+  const body = rows.map(r => `<tr>${r.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${i === 0 ? esc(c) : c}</td>`).join("")}</tr>`).join("");
+  return `<table><thead>${head}</thead><tbody>${body || '<tr><td colspan="'+headers.length+'" class="muted">暂无数据</td></tr>'}</tbody></table>`;
+}
+
+function drawChart(daily) {
+  const canvas = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 180 * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 180;
+  ctx.clearRect(0, 0, W, H);
+  if (!daily.length) { ctx.fillStyle = "#8a93a6"; ctx.fillText("暂无数据", 16, 30); return; }
+  const max = Math.max(...daily.map(d => d.cost), 0.000001);
+  const pad = 8, bw = (W - pad * 2) / daily.length;
+  ctx.strokeStyle = "#262b36"; ctx.beginPath(); ctx.moveTo(pad, H - 20); ctx.lineTo(W - pad, H - 20); ctx.stroke();
+  daily.forEach((d, i) => {
+    const h = Math.max(1, (d.cost / max) * (H - 40));
+    const x = pad + i * bw;
+    ctx.fillStyle = "#4c8dff";
+    ctx.fillRect(x, H - 20 - h, Math.max(2, bw - 2), h);
+  });
+}
+
+async function loadPricing() {
+  const res = await apiFetch("/admin/api/pricing");
+  const data = await res.json();
+  const p = data.pricing || {};
+  const models = Object.keys(p);
+  const rows = [["模型", "输入(命中) 峰/闲", "输入(未命中) 峰/闲", "输出 峰/闲"]];
+  models.forEach(m => {
+    const r = p[m];
+    rows.push([m,
+      r.cache_hit.peak + " / " + r.cache_hit.offpeak,
+      r.cache_miss.peak + " / " + r.cache_miss.offpeak,
+      r.output.peak + " / " + r.output.offpeak]);
+  });
+  document.getElementById("pricing").innerHTML =
+    tableRows(rows[0], rows.slice(1)) + `<p class="muted">单位：${data.unit}；${data.peak_hours}</p>`;
+}
+
+document.getElementById("refresh").onclick = () => { loadUsage(); loadTurns(); };
+document.getElementById("user-select").onchange = (e) => { currentUserId = e.target.value; loadUsage(); loadTurns(); };
+document.getElementById("logout").onclick = async () => {
+  await fetch("/admin/logout", { method: "POST" });
+  window.location.href = "/admin/login";
+};
+loadUsage();
+loadTurns();
+loadPricing();
+setInterval(() => { loadUsage(); loadTurns(); }, 30000);
+</script>
+</body>
+</html>

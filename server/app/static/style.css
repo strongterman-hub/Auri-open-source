@@ -1,0 +1,87 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  background: #0f1420;
+  color: #e7ecf5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+}
+
+.shell {
+  max-width: 900px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  background: #171e2e;
+  border: 1px solid #2b3550;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+h1,
+h2 {
+  margin: 0 0 8px;
+}
+
+.row,
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.grid input,
+.grid select,
+.row input,
+.row select {
+  flex: 1;
+  min-width: 140px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a4664;
+  background: #0f1420;
+  color: #e7ecf5;
+}
+
+button {
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid #4d68ff;
+  background: #24345f;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2d4178;
+}
+
+.muted {
+  color: #8b98b5;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
+.output {
+  min-height: 220px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0a0e18;
+  border: 1px solid #25304a;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Auri personal agent server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auri
+Group=auri
+WorkingDirectory=/opt/auri/server
+ExecStart=/opt/auri/server/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 1
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

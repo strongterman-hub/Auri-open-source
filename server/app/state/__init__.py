@@ -1,0 +1,1 @@
+"""Process-wide dependency container."""

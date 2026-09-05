@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Auri，会主动联系你的 AI 朋友。从睡眠变化、当地天气，到你最近聊过的事，让关心融进日常。"
+    />
+    <meta name="theme-color" content="#100d1b" />
+    <title>Auri｜主动找你，慢慢懂你</title>
+    <link rel="icon" href="/static/site/assets/auri-icon.png" />
+    <link rel="stylesheet" href="/static/site/site.css?v=20260905-6" />
+    <script src="/static/site/site.js?v=20260905-6" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Auri 首页">
+        <img src="/static/site/assets/auri-icon.png" alt="" width="40" height="40" />
+        <span>Auri</span>
+      </a>
+      <nav aria-label="主导航">
+        <a href="#proactive">主动陪伴</a>
+        <a href="#health">健康</a>
+        <a class="nav-download" href="/download">下载</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero scenario-hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="section-kicker">会主动联系你的 AI 朋友</p>
+          <h1 id="hero-title">主动找你，<br /><span>慢慢懂你。</span></h1>
+          <p class="hero-lead">到了新的城市，昨晚睡得有点少，<br class="wide-break" />或是前几天聊过的小事有了下文。<br class="wide-break" />Auri 会带着这些牵挂，来找你聊聊。</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="/download"><span>下载 Android 版</span><span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="#proactive">看看日常里的 Auri <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+
+        <div class="scenario-stage" aria-label="Auri 主动对话场景演示">
+          <div class="scenario-tabs" role="tablist" aria-label="切换主动对话场景">
+            <button id="tab-arrival" type="button" role="tab" data-screen-target="arrival" aria-controls="scene-arrival" aria-selected="true"><span>01</span> 到了新城市</button>
+            <button id="tab-sleep" type="button" role="tab" data-screen-target="sleep" aria-controls="scene-sleep" aria-selected="false" tabindex="-1"><span>02</span> 昨晚没睡好</button>
+            <button id="tab-rain" type="button" role="tab" data-screen-target="rain" aria-controls="scene-rain" aria-selected="false" tabindex="-1"><span>03</span> 出门遇上雨</button>
+          </div>
+          <div class="conversation-frame">
+            <div class="conversation-header"><img src="/static/site/assets/auri-icon.png" alt="" width="42" height="42" /><div><strong>Auri</strong><span>内容由 AI 生成</span></div><span class="demo-label">场景演示</span></div>
+            <div class="scenario-panel is-active" id="scene-arrival" role="tabpanel" aria-labelledby="tab-arrival" data-screen="arrival" aria-hidden="false" tabindex="0">
+              <p class="scene-context"><span>旅途中的一句问候</span>杭州 · 傍晚</p>
+              <p class="message-time">17:26 · Auri 主动发来</p>
+              <div class="demo-message auri-message">到杭州啦，路上还顺利吗？<br />你之前说想去西湖走走，今天安顿好就先歇会儿，慢慢逛。</div>
+              <div class="demo-message user-message">刚放下行李，打算先找点吃的</div>
+              <div class="demo-message auri-message">第一顿想吃点当地的，还是找家熟悉的填饱肚子？</div>
+              <p class="scene-source">从你聊过的行程，到此刻所在的城市</p>
+            </div>
+            <div class="scenario-panel" id="scene-sleep" role="tabpanel" aria-labelledby="tab-sleep" data-screen="sleep" aria-hidden="true" tabindex="0" hidden>
+              <p class="scene-context"><span>睡得少的那个早上</span>睡眠 · 5 小时 12 分</p>
+              <p class="message-time">09:18 · Auri 主动发来</p>
+              <div class="demo-message auri-message">昨晚只睡了五个多小时，今天还撑得住吗？中午有空的话，眯一小会儿吧。</div>
+              <div class="demo-message user-message">是有点困，昨晚看书看晚了</div>
+              <div class="demo-message auri-message">什么书这么好看，连睡觉都舍不得？</div>
+              <p class="scene-source">从昨晚的睡眠，聊到你喜欢的那本书</p>
+            </div>
+            <div class="scenario-panel" id="scene-rain" role="tabpanel" aria-labelledby="tab-rain" data-screen="rain" aria-hidden="true" tabindex="0" hidden>
+              <p class="scene-context"><span>准备出门的时候</span>当地天气 · 小雨</p>
+              <p class="message-time">16:42 · Auri 主动发来</p>
+              <div class="demo-message auri-message">你那边下雨了。记得你说傍晚想出去走走，出门带把伞，别淋着。</div>
+              <div class="demo-message user-message">那我去附近喝杯咖啡好了</div>
+              <div class="demo-message auri-message">也不错，找个窗边的位置，看雨发会儿呆。</div>
+              <p class="scene-source">留意当地天气，也记得你今天的安排</p>
+            </div>
+            <div class="conversation-footer" aria-hidden="true"><span>聊聊今天的事…</span><span>＋</span></div>
+          </div>
+          <p class="scenario-note">对话为场景示例。开启主动消息并连接或授权相关数据后，Auri 会结合实际情况联系你。</p>
+        </div>
+      </section>
+
+      <section class="everyday-section" id="proactive" aria-labelledby="everyday-title">
+        <div class="everyday-heading">
+          <p class="story-index">01 / 日常里的主动联系</p>
+          <h2 id="everyday-title">一句关心，<br />也可以聊出很多。</h2>
+          <p>Auri 会留意你的近况，惦记你想做的事，也会带着一个新话题来找你。</p>
+        </div>
+        <div class="everyday-grid">
+          <article class="everyday-card">
+            <p class="moment-label">留意一点变化</p>
+            <h3>最近睡得规律了</h3>
+            <p class="moment-context">这一周，入睡时间比上周更规律。</p>
+            <div class="mini-sender"><img src="/static/site/assets/auri-icon.png" alt="" width="28" height="28" />Auri 主动发来</div>
+            <blockquote>这周睡觉的时间规律多了，早上起来有没有轻松一点？</blockquote>
+          </article>
+          <article class="everyday-card">
+            <p class="moment-label">惦记你的小目标</p>
+            <h3>想开始跑步的你</h3>
+            <p class="moment-context">你前几天说，想慢慢养成跑步的习惯。</p>
+            <div class="mini-sender"><img src="/static/site/assets/auri-icon.png" alt="" width="28" height="28" />Auri 主动发来</div>
+            <blockquote>还惦记着你说想开始跑步。今天想不想下楼跑一小圈？十分钟也算开始。</blockquote>
+          </article>
+          <article class="everyday-card">
+            <p class="moment-label">聊点新鲜的</p>
+            <h3>一个突然想到的问题</h3>
+            <p class="moment-context">平常的一天，也可以聊点有趣的。</p>
+            <div class="mini-sender"><img src="/static/site/assets/auri-icon.png" alt="" width="28" height="28" />Auri 主动发来</div>
+            <blockquote>如果明天突然多出一天假，你想出去玩，还是在家舒舒服服待一天？</blockquote>
+          </article>
+        </div>
+        <p class="examples-caption">以上为主动对话示例</p>
+      </section>
+
+      <section class="memory-story" aria-labelledby="memory-title">
+        <div class="memory-visual" aria-label="记忆回访对话示例">
+          <div class="memory-day"><span>周五 · 你聊起周末</span><p>周末想去爬山，好久没出门了。</p></div>
+          <div class="memory-trace" aria-hidden="true"><i></i><span>过了一个周末</span><i></i></div>
+          <div class="memory-day memory-day-auri"><span>周一 · Auri 主动发来</span><p>周末去爬山了吗？有没有看到什么好风景？</p></div>
+          <p class="examples-caption">记忆回访场景示例</p>
+        </div>
+        <div class="story-copy">
+          <p class="story-index">02 / 聊过的事，有了下文</p>
+          <h2 id="memory-title">你随口提的小事，<br />Auri 还惦记着。</h2>
+          <p>周末想去的地方、正在坚持的爱好、最近的一点烦恼。Auri 会记住这些日常，在之后的聊天里问问进展，陪你接着聊。</p>
+        </div>
+      </section>
+
+      <section class="health-section" id="health" aria-labelledby="health-title">
+        <div class="health-heading">
+          <div>
+            <p class="story-index">03 / 真实健康数据</p>
+            <h2 id="health-title">看见身体的变化，<br />关心每天的你。</h2>
+          </div>
+          <p>
+            从活动、心率，到睡眠与恢复，Auri 把小米健康数据整理成清楚的总览和趋势，也能让这些变化成为关心你的线索。
+          </p>
+        </div>
+
+        <div class="health-gallery" aria-label="Auri 健康功能真实截图">
+          <figure class="health-card health-card-overview">
+            <div class="health-screen">
+              <img
+                src="/static/site/assets/app-health-overview.png"
+                alt="健康总览，包含活动、心率和睡眠"
+                width="1080"
+                height="2400"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <figcaption><span>01</span><strong>健康总览</strong><small>活动 · 心率 · 睡眠</small></figcaption>
+          </figure>
+
+          <figure class="health-card health-card-focus">
+            <div class="health-screen">
+              <img
+                src="/static/site/assets/app-health-focus.png"
+                alt="睡眠、恢复和身体成分健康数据"
+                width="1080"
+                height="2400"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <figcaption><span>02</span><strong>睡眠与恢复</strong><small>心率 · 恢复 · 身体成分</small></figcaption>
+          </figure>
+
+          <figure class="health-card health-card-trend">
+            <div class="health-screen">
+              <img
+                src="/static/site/assets/app-health-trend.png"
+                alt="一周睡眠趋势与每日睡眠得分"
+                width="1080"
+                height="2400"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <figcaption><span>03</span><strong>睡眠趋势</strong><small>一周变化 · 每日得分</small></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="capabilities" class="capabilities" aria-labelledby="capabilities-title">
+        <div class="capabilities-heading">
+          <p class="section-kicker">都在同一段对话里</p>
+          <h2 id="capabilities-title"><span>像朋友一样陪你</span><span>也真的能帮上忙</span></h2>
+        </div>
+        <div class="capability-grid">
+          <article>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h3l2-6 4 11 2-5h5" /></svg>
+            <h3>理解健康变化</h3>
+            <p>读取睡眠、恢复、心率和日常活动趋势</p>
+          </article>
+          <article>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3-5 3V4Z" /></svg>
+            <h3>记住重要安排</h3>
+            <p>在聊天里自然记下提醒、待办和重要事件</p>
+          </article>
+          <article>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h9l5 5v13H5V3Z" /><path d="M14 3v6h5" /></svg>
+            <h3>一起看文件</h3>
+            <p>理解图片、PDF、Word 和表格里的内容</p>
+          </article>
+          <article>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m15 9-2 4-4 2 2-4 4-2Z" /></svg>
+            <h3>查找实时信息</h3>
+            <p>需要时查证天气、时间、网页与最新信息</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-title">
+        <div class="closing-intro">
+          <img src="/static/site/assets/auri-icon.png" alt="" width="72" height="72" />
+          <div><h2 id="closing-title">认识 Auri</h2><p>会主动联系你的 AI 朋友</p></div>
+        </div>
+        <div class="closing-action">
+        <a class="button button-primary" href="/download">
+          <span>下载 Auri</span>
+          <span aria-hidden="true">↓</span>
+        </a>
+        <p class="closing-note">Android 8.0 及以上</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="/">
+        <img src="/static/site/assets/auri-icon.png" alt="" width="34" height="34" />
+        <span>Auri</span>
+      </a>
+      <p>会主动联系你的 AI 朋友</p>
+      <p><a href="https://github.com/strongterman-hub/Auri-open-source">查看项目源码 · AGPL / MIT</a></p>
+      <p>© 2026 Auri</p>
+    </footer>
+  </body>
+</html>
