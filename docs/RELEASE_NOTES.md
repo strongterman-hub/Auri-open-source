@@ -2,7 +2,9 @@
 
 日期：2026-09-05。Android 基线为 **0.3.25 / versionCode 28**。
 
-本说明记录首次开源快照的本地准备结果。此时尚未创建公开 GitHub 仓库、推送源码或运行远程 GitHub Actions，也没有因此发布新的官方 APK 或部署生产服务。仓库创建并推送后，应在后续记录中补充发布链接和 CI 结果。
+本说明记录首次开源快照的本地准备结果。源码已于 2026-09-05 发布到 [GitHub 公开仓库](https://github.com/strongterman-hub/Auri-open-source)，首次源码提交为 `c27af81`。本次发布没有产生新的官方 APK，也没有部署生产服务。
+
+推送会触发服务端测试和 Android 构建，最新远程结果见 [GitHub Actions](https://github.com/strongterman-hub/Auri-open-source/actions/workflows/ci.yml)。下表记录本地验证；远程状态以对应提交的运行记录为准。
 
 ## 源码范围
 
@@ -43,4 +45,4 @@ Android 构建环境为 JDK 17、Android SDK 35、Gradle 8.9。构建中存在�
 
 本轮未进行设备安装、模拟器 UI 操作或物理真机验证。Echo 联调不证明真实模型、小米账号、邮件、支付、系统推送及厂商通道已经在新实例可用；这些需要维护者配置自己的服务后单独验收。
 
-未签名 Release 和 AAB 的构建成功不等于可以直接安装、已提交商店或已通过商店审核。GitHub Actions 配置已提供，但本轮没有远程 CI 运行结果。
+未签名 Release 和 AAB 的构建成功不等于可以直接安装、已提交商店或已通过商店审核。GitHub Actions 的具体检查范围见 [工作流配置](../.github/workflows/ci.yml)，其结果不能替代设备与外部服务验收。
