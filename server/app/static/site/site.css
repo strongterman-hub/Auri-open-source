@@ -1583,6 +1583,10 @@ img {
 .download-lead span { display: block; white-space: nowrap; }
 .download-button { min-width: 246px; min-height: 56px; }
 .download-page .site-header nav a { display: inline-flex; min-height: 44px; align-items: center; }
+.download-source { max-width: 360px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line); }
+.source-link { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--violet-pale); font-size: 14px; }
+.source-link:hover { color: #fff; text-decoration: underline; text-underline-offset: 5px; }
+.download-source p { margin: 2px 0 0; color: var(--muted-strong); font-size: 12px; line-height: 1.9; }
 @media (max-width: 920px) {
   .capabilities { grid-template-columns: 1fr; gap: 36px; }
   .capabilities-heading h2 { font-size: clamp(30px, 5vw, 42px); }
