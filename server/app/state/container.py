@@ -9,6 +9,7 @@ from app.agent.provider import build_llm_client
 from app.agent.runner import AgentRunner, BasicAgentRunner
 from app.agent.tools import (
     CalculatorTool,
+    CreditsBalanceTool,
     DateAddTool,
     FetchUrlTool,
     HealthDataTool,
@@ -90,11 +91,16 @@ from app.services.trending_service import TrendingService
 from app.services.weather_service import WeatherService
 from app.session.store import FileSessionStore, SessionStore
 from app.todos import TodoStore
+from app.schedule.service import ScheduleService
+from app.schedule.scheduler import ScheduleScheduler
+from app.schedule.tool import ScheduleTool
 from app.web.client import WebSearchClient, build_web_search_client
 
 
 @dataclass
 class Container:
+    schedule_service: ScheduleService
+    schedule_scheduler: ScheduleScheduler
     settings: Settings
     memory_store: MemoryStore
     session_store: SessionStore
@@ -216,6 +222,7 @@ def create_container(settings: Settings) -> Container:
         default_timezone=settings.default_timezone,
     )
     resolve_user_tz = lambda user_id: timezone_resolver.get(user_id)
+    schedule_service = ScheduleService(settings.data_dir / "schedule" / "schedule.db", resolve_user_tz)
     weather_service = WeatherService(
         observation_service,
         latitude=settings.weather_latitude,
@@ -346,6 +353,7 @@ def create_container(settings: Settings) -> Container:
         max_tokens=settings.chat_reply_planner_max_tokens,
     )
     proactive_context_builder = ProactiveContextBuilder(
+        schedule_service=schedule_service,
         session_service=session_service,
         observation_service=observation_service,
         presence=presence_service,
@@ -383,6 +391,7 @@ def create_container(settings: Settings) -> Container:
         settings.data_dir / "logs" / "proactive_gate.jsonl"
     )
     account_deletion_service = AccountDeletionService(
+        schedule_service=schedule_service,
         auth_store=auth_store,
         billing_store=billing_store,
         session_service=session_service,
@@ -425,6 +434,8 @@ def create_container(settings: Settings) -> Container:
 
     def tool_factory(scope: MemoryScope) -> list[Tool]:
         return [
+            ScheduleTool(schedule_service, scope.user_id, scope.agent_id),
+            CreditsBalanceTool(billing_service=billing_service, user_id=scope.user_id),
             MemoryTool(memory_service=memory_service, scope=scope, origin=OriginClass.agent),
             MemorySearchTool(
                 observation_service=observation_service,
@@ -512,9 +523,10 @@ def create_container(settings: Settings) -> Container:
             tool
             for tool in tool_factory(scope)
             if tool.name in proactive_read_only_tool_names
-        ]
+        ] + [ScheduleTool(schedule_service, scope.user_id, scope.agent_id, read_only=True)]
 
     agent_service = AgentService(
+        schedule_service=schedule_service,
         session_service=session_service,
         memory_service=memory_service,
         runner=agent_runner,
@@ -612,6 +624,7 @@ def create_container(settings: Settings) -> Container:
         tick_seconds=settings.reminder_tick_seconds,
     )
 
+    schedule_scheduler = ScheduleScheduler(schedule_service, proactive_delivery, settings.reminder_tick_seconds)
     agent_service.proactive_reply_hook = proactive_engine.record_reply
     agent_service.proactive_activity_hook = proactive_engine.record_user_activity
     agent_service.is_onboarding = proactive_engine.is_dense_onboarding
@@ -625,6 +638,8 @@ def create_container(settings: Settings) -> Container:
     )
 
     return Container(
+        schedule_service=schedule_service,
+        schedule_scheduler=schedule_scheduler,
         settings=settings,
         memory_store=memory_store,
         session_store=session_store,

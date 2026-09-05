@@ -1,6 +1,6 @@
 # Auri Android
 
-Kotlin + Jetpack Compose 客户端。完整介绍见 [仓库首页](../README.md)，构建说明见 [Android 指南](../docs/ANDROID.md)。
+Kotlin + Jetpack Compose 客户端，包含聊天、日程、健康与账号页面。完整介绍见 [仓库首页](../README.md)，构建说明见 [Android 指南](../docs/ANDROID.md)。
 
 需要 JDK 17、SDK 35、Gradle 8.9。首次构建需联网下载依赖。
 

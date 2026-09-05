@@ -58,6 +58,7 @@ class AccountDeletionService:
         timezone_store: UserTimezoneStore,
         event_store: EventMemoryStore | None = None,
         chat_reply_store: ChatReplyStore | None = None,
+        schedule_service=None,
     ) -> None:
         self.auth_store = auth_store
         self.billing_store = billing_store
@@ -83,6 +84,7 @@ class AccountDeletionService:
         self.timezone_store = timezone_store
         self.event_store = event_store
         self.chat_reply_store = chat_reply_store
+        self.schedule_service = schedule_service
 
     async def delete_user(
         self,
@@ -111,6 +113,8 @@ class AccountDeletionService:
         self.intent_store.delete_user(user_id, agent_id)
         self.todo_store.delete_user(user_id, agent_id)
         self.reminder_store.delete_user(user_id, agent_id)
+        if self.schedule_service is not None:
+            self.schedule_service.delete_user(user_id, agent_id)
         self.proactive_store.delete_user(user_id, agent_id)
         self.proactive_settings_store.delete_user(user_id, agent_id)
         self.preference_store.delete_user(user_id, agent_id)

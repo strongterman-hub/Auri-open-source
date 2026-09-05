@@ -116,6 +116,10 @@ class MainActivity : ComponentActivity() {
                         label = "main-route",
                     ) { currentRoute ->
                         when (currentRoute) {
+                        AuriRoute.Schedule -> ScheduleScreen(
+                            onBack = { routeName = AuriRoute.Chat.name },
+                        )
+
                         AuriRoute.Health -> HealthScreen(
                             onBack = { routeName = AuriRoute.Chat.name },
                         )
@@ -197,6 +201,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                             AuriRoute.Chat -> ChatScreen(
+                                onOpenSchedule = { routeName = AuriRoute.Schedule.name },
                                 onOpenHealth = { routeName = AuriRoute.Health.name },
                                 onOpenAccount = { routeName = AuriRoute.Account.name },
                                 onOpenSettings = { routeName = AuriRoute.ChatSettings.name },
@@ -301,6 +306,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class AuriRoute {
     Chat,
+    Schedule,
     Health,
     Account,
     ChatSettings,

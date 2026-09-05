@@ -14,7 +14,8 @@ This repository contains the complete application source for both sides: chat, m
 - **Memory:** durable user notes, structured events, temporal boundaries, correction relationships, gradual decay of ordinary details and rolling conversation summaries.
 - **Proactive contact:** source freshness, do-not-disturb gates, evidence checks, exposure acknowledgments, reply attribution, backoff and recovery probes.
 - **Optional health context:** experimental Xiaomi Health Cloud integration, normalized metrics, workout records, sleep and recovery scores. No medical diagnosis claims.
-- **Tools:** search, web pages, weather, location, calculations, conversions, dates, reminders and todos.
+- **Shared calendar:** month view, manual edits, chat-based reads and writes, recurring events, and scheduled reminders.
+- **Tools:** calendar, search, web pages, weather, location, calculations, conversions, dates, reminders and todos.
 - **Attachments:** images and common document formats; actual model and parser support is required.
 - **Accounts and operations:** email verification, password reset, token hashing, account deletion, usage logs, Credits ledger and payment callback validation.
 - **Android channels:** store builds without self-install updates; direct builds with versioned APK download and integrity checks.

@@ -284,8 +284,10 @@ class ProactiveContextBuilder:
         health_stale_seconds: int = 21600,
         weather_timeout_seconds: float = 3.0,
         max_signals: int = 48,
+        schedule_service=None,
     ) -> None:
         self.session_service = session_service
+        self.schedule_service = schedule_service
         self.observation_service = observation_service
         self.presence = presence
         self.reminder_store = reminder_store
@@ -399,6 +401,7 @@ class ProactiveContextBuilder:
                 timezone_name,
             ),
             "reminders": asyncio.to_thread(self._reminder_signals, scope, current),
+            "schedule": asyncio.to_thread(self._schedule_signals, scope, current),
             "todos": asyncio.to_thread(self._todo_signals, scope, current),
             "presence": asyncio.to_thread(self._presence_signals, scope, current),
             "pacing": asyncio.to_thread(self._pacing_signals, scope, current),
@@ -927,6 +930,23 @@ class ProactiveContextBuilder:
             )
         ]
 
+    def _schedule_signals(self, scope: MemoryScope, now: datetime) -> list[SituationSignal]:
+        if self.schedule_service is None:
+            return []
+        day = now.astimezone(resolve_zoneinfo(self._timezone(scope.user_id))).date()
+        from datetime import timedelta
+        events = self.schedule_service.list(scope.user_id, scope.agent_id, day, day + timedelta(days=2))["events"]
+        result = []
+        for event in events:
+            if event["status"] != "scheduled" or datetime.fromisoformat(event["ends_at"]) <= now:
+                continue
+            result.append(SituationSignal(
+                id=f"schedule_{event['id']}_{event['occurrence_date']}", source="schedule", kind="planned_event",
+                value={**event, "planned_only": True, "active_now": not event["all_day"] and datetime.fromisoformat(event["starts_at"]) <= now < datetime.fromisoformat(event["ends_at"])},
+                observed_at=now, age_seconds=0, freshness=SignalFreshness.fresh, confidence=1.0,
+            ))
+        return sorted(result, key=lambda item: (not item.value["active_now"], item.value["starts_at"]))[:8]
+
     def _observation_signals(
         self,
         scope: MemoryScope,
@@ -936,7 +956,6 @@ class ProactiveContextBuilder:
         for source in (
             ObservationSource.health,
             ObservationSource.weather,
-            ObservationSource.schedule,
             ObservationSource.phone_state,
         ):
             observations = self.observation_service.query(
@@ -978,6 +997,8 @@ class ProactiveContextBuilder:
         for signal in snapshot.signals:
             if signal.freshness is SignalFreshness.expired:
                 continue
+            if signal.source == "schedule" and signal.value.get("active_now"):
+                low_reasons.append(("日历安排显示此时可能有事，避免无关闲聊；不代表实际正在进行", signal.id))
             if signal.source == "health" and signal.kind == "sleep_stage":
                 if signal.freshness is SignalFreshness.fresh:
                     try:

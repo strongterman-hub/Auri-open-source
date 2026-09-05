@@ -342,7 +342,7 @@ class ProactiveEngine:
         """Opportunistically start onboarding when a new user comes online."""
         if not self.settings.proactive_enabled:
             self._audit_gate(
-                user_id, agent_id, trigger_source, "blocked", "global_disabled"
+                user_id, agent_id, "event", "blocked", "global_disabled"
             )
             return None
         if self.is_dense_onboarding(user_id, agent_id):

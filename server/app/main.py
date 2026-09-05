@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
     if settings.reminder_enabled:
         reminder_scheduler = app.state.container.reminder_scheduler
         await reminder_scheduler.start()
+        await app.state.container.schedule_scheduler.start()
         app.state.reminder_scheduler = reminder_scheduler
     yield
     if chat_reply_scheduler is not None:
@@ -103,6 +104,7 @@ async def lifespan(app: FastAPI):
         await weather_scheduler.stop()
     if reminder_scheduler is not None:
         await reminder_scheduler.stop()
+        await app.state.container.schedule_scheduler.stop()
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",

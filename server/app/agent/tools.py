@@ -13,6 +13,7 @@ from app.agent.calculations import (
     days_between,
     safe_eval,
 )
+from app.billing.service import BillingService
 from app.health.types import ALL_METRIC_TYPES, ALL_SAMPLE_TYPES, METRIC_TYPES, SAMPLE_TYPES
 from app.health import stats as health_stats
 from app.integrations.xiaomi.service import XiaomiService
@@ -66,6 +67,50 @@ class Tool(ABC):
                 "parameters": self.parameters,
             },
         }
+
+
+class CreditsBalanceTool(Tool):
+    """Read the balance of the server-bound current account."""
+
+    name = "get_credits_balance"
+    description = (
+        "Query the current user's live Auri Credits balance and recharge rate. "
+        "Call whenever the user asks how many Credits remain or about their Auri "
+        "account balance; never use an old balance from chat or memory. "
+        "This is a balance snapshot, not a bank/Alipay balance or a payment action. "
+        "It cannot retrieve recharge history or itemized spending. The Credits "
+        "page supports viewing the balance and recharging only; do not claim "
+        "it provides transaction history or spending details."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
+
+    def __init__(self, billing_service: BillingService, user_id: str) -> None:
+        self.billing_service = billing_service
+        self.user_id = user_id
+
+    async def execute(self, **kwargs: Any) -> str:
+        if kwargs:
+            raise ValueError("get_credits_balance does not accept arguments")
+        balance = self.billing_service.balance_text(self.user_id)
+        return json.dumps(
+            {
+                "balance_credits": balance,
+                "unit": "Credits",
+                "queried_at": datetime.now(timezone.utc).isoformat(),
+                "credits_per_yuan": self.billing_service.credits_per_yuan,
+                "recharge_entry": "账号中心 → Credits",
+                "notice": (
+                    "这是查询时的 Auri Credits 余额；本轮回复及后续模型调用仍可能扣费。"
+                    "充值兑换率表示每 1 元可购买的 Credits，不代表可提现金额。"
+                ),
+            },
+            ensure_ascii=False,
+        )
 
 
 class MemoryTool(Tool):

@@ -10,7 +10,7 @@ flowchart TD
   Services --> Queue[持久异步回复队列]
   Queue --> Runner[Agent runner]
   Runner --> LLM[Chat Completions 兼容模型]
-  Runner --> Tools[记忆 / 健康 / 搜索 / 提醒等工具]
+  Runner --> Tools[记忆 / 日程 / 健康 / 搜索 / 提醒等工具]
   Tools --> Data[SQLite / JSON / JSONL]
   Services --> Data
   Timer[调度器 / 数据事件] --> Gates[可打扰性与节奏检查]
@@ -34,6 +34,7 @@ flowchart TD
 | `server/app/memory/` | 长期笔记、观察检索、事件及前瞻记录 |
 | `server/app/proactive/` | 情境、决策、节奏、引导、投递、推送 |
 | `server/app/health/` | 标准化指标、统计、睡眠评分和缓存 |
+| `server/app/schedule/` | 共享日程、重复展开、例外、冲突和提醒调度 |
 | `server/app/integrations/xiaomi/` | 非官方小米云协议、扫码登录与凭据 |
 | `server/app/billing/` | Credits、支付订单、回调校验与幂等记账 |
 | `android/app/src/main/java/com/auri/chat/` | Compose 页面、ViewModel、API 和 Room |
@@ -59,9 +60,15 @@ flowchart TD
 
 `intents` 当前仅提供存取，不是全功能自然语言条件执行系统。已有提醒调度器支持的定时/健康条件提醒应单独理解。
 
+## 日程
+
+Android 月历和普通聊天 `schedule` 工具读写同一个 `ScheduleService`。身份由登录账号或服务端工具范围绑定，客户端和模型都不能通过参数切换到其他用户。写入带请求幂等键和版本号；冲突需要明确接受，重复事项可只改本次或修改整个系列。
+
+日程按事项所属 IANA 时区保存本地墙上时间并展开重复规则，全天结束日期采用不包含边界。提醒投递有独立去重记录，不会因时间到达自动把事项标成完成。聊天摘要不包含备注，标题和地点按不可信用户数据处理；主动情境只把日程视为计划，并在定时事项正在覆盖当前时段时降低无关打扰。
+
 ## 主动联系
 
-触发、决策、投递分层。情境快照包含本地时间、对话、事件、健康、GPS、天气、提醒、待办、在线信息与节奏状态。每个来源都带可用性和新鲜度；单个来源失败不阻止整个评估。
+触发、决策、投递分层。情境快照包含本地时间、对话、事件、日程、健康、GPS、天气、提醒、待办、在线信息与节奏状态。每个来源都带可用性和新鲜度；单个来源失败不阻止整个评估。
 
 确定性规则先决定是否允许打扰，模型再提供 `should_message` 与证据引用。投递前校验证据，避免把天气回退坐标当成用户当前位置，也避免无数据时声称用户在运动。
 
@@ -91,6 +98,7 @@ decision ledger 保存消息投放、推送结果、客户端 inbox ack、回复
 | 连续会话和压缩摘要 | `sessions/` 下的 JSON |
 | 持久笔记、观察和事件 | `memory/` 下的 JSON + SQLite |
 | 健康指标与样本 | `health/health.db` |
+| 日程系列、单次例外和投递去重 | `schedule/schedule.db` |
 | 聊天回复任务 | `chat/replies.db` |
 | 推送 token、位置 | `devices/` 下的 SQLite |
 | Credits 和订单 | `billing/` 下的 SQLite |

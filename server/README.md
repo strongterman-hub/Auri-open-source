@@ -1,6 +1,6 @@
 # Auri Server
 
-完整项目介绍见 [仓库首页](../README.md)。本目录包含 FastAPI 服务、Agent 工具循环、聊天队列、记忆、主动消息、健康、账号、Credits、后台和官网源码。
+完整项目介绍见 [仓库首页](../README.md)。本目录包含 FastAPI 服务、Agent 工具循环、聊天队列、记忆、主动消息、日程、健康、账号、Credits、后台和官网源码。
 
 - Python 3.12 推荐；安装：`python -m pip install -e '.[dev]'`
 - 配置：复制 `.env.example` 为 `.env`，不要提交真实配置。

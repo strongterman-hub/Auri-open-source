@@ -45,6 +45,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
@@ -111,6 +112,7 @@ private sealed interface ChatListItem {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    onOpenSchedule: () -> Unit = {},
     onOpenHealth: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -242,6 +244,10 @@ fun ChatScreen(
             drawerState = drawerState,
             drawerContent = {
                 AppDrawer(
+                    onOpenSchedule = {
+                        scope.launch { drawerState.close() }
+                        onOpenSchedule()
+                    },
                     onOpenHealth = {
                         scope.launch { drawerState.close() }
                         onOpenHealth()
@@ -423,6 +429,7 @@ fun ChatScreen(
 
 @Composable
 private fun AppDrawer(
+    onOpenSchedule: () -> Unit,
     onOpenHealth: () -> Unit,
     onOpenAccount: () -> Unit,
 ) {
@@ -443,6 +450,18 @@ private fun AppDrawer(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(12.dp))
+            TextButton(
+                onClick = onOpenSchedule,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DateRange,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("日程", color = MaterialTheme.colorScheme.onSurface)
+            }
             TextButton(
                 onClick = onOpenHealth,
                 modifier = Modifier.fillMaxWidth(),

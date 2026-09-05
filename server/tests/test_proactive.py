@@ -212,6 +212,18 @@ def test_engine_delivers_proactive_message_to_session(tmp_dir: Path) -> None:
     assert assistant_messages[-1]["content"] == "昨晚睡得有点晚"
 
 
+def test_maybe_onboard_returns_cleanly_when_proactive_is_globally_disabled(
+    tmp_dir: Path,
+) -> None:
+    engine, _session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        '{"category": "explore", "message": "不会发送"}',
+    )
+    engine.settings.proactive_enabled = False
+
+    assert asyncio.run(engine.maybe_onboard("u1", "default")) is None
+
+
 def test_proactive_decision_receives_current_time_message_time_and_event_timeline(
     tmp_dir: Path,
 ) -> None:

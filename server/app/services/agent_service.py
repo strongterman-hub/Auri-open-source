@@ -105,6 +105,7 @@ class AgentService:
         xiaomi_status_provider: Callable[[str], dict] | None = None,
         timezone_resolver: Callable[[str], str] | None = None,
         event_memory_service: EventMemoryService | None = None,
+        schedule_service=None,
     ) -> None:
         self.session_service = session_service
         self.memory_service = memory_service
@@ -123,6 +124,7 @@ class AgentService:
         self.xiaomi_status_provider = xiaomi_status_provider
         self.timezone_resolver = timezone_resolver
         self.event_memory_service = event_memory_service
+        self.schedule_service = schedule_service
         self._session_locks: dict[str, asyncio.Lock] = {}
 
     def _lock_for(self, session_id: str) -> asyncio.Lock:
@@ -286,6 +288,7 @@ class AgentService:
         )
         memory_snapshot = await self.memory_service.snapshot(scope)
         memory_prompt = self.memory_service.build_system_prompt(memory_snapshot)
+        memory_prompt += self._schedule_context(scope)
         if self.event_memory_service is not None:
             try:
                 event_context = await self.event_memory_service.build_context(scope)
@@ -369,6 +372,14 @@ class AgentService:
 
         return turn, scope, latest, assistant_message
 
+    def _schedule_context(self, scope: MemoryScope) -> str:
+        if self.schedule_service is None:
+            return ""
+        try:
+            return "\n\n" + self.schedule_service.summary(scope.user_id, scope.agent_id)
+        except Exception:
+            return "\n\n[LIVE SCHEDULE unavailable: do not assume the user has no plans; query schedule tool.]"
+
     def _current_time_text(self, user_id: str) -> str:
         tz_name = "Asia/Shanghai"
         if self.timezone_resolver is not None:
@@ -403,6 +414,7 @@ class AgentService:
 
         snapshot = await self.memory_service.snapshot(scope)
         memory_prompt = self.memory_service.build_system_prompt(snapshot)
+        memory_prompt += self._schedule_context(scope)
         if self.event_memory_service is not None:
             try:
                 event_context = await self.event_memory_service.build_context(scope)

@@ -13,12 +13,14 @@ from app.api.routes import (
     presence,
     proactive,
     profile,
+    schedule,
     sessions,
     told,
     update,
 )
 
 api_router = APIRouter()
+api_router.include_router(schedule.router)
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(health_metrics.router, prefix="/health", tags=["health-data"])
 api_router.include_router(auth.router)
