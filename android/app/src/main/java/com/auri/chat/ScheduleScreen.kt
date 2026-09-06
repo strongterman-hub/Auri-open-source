@@ -452,7 +452,6 @@ private fun PickerField(label: String, value: String, onClick: () -> Unit) {
             Spacer(Modifier.height(2.dp))
             Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
         }
-        Text("选择", color = AuriTokens.Primary)
     }
 }
 
