@@ -31,4 +31,15 @@ class ScheduleCalendarTest {
         assertTrue(eventCoversDate(event, LocalDate.of(2026, 9, 8)))
         assertFalse(eventCoversDate(event, LocalDate.of(2026, 9, 9)))
     }
+
+    @Test
+    fun datePickerMillisRoundTripDoesNotShiftCalendarDate() {
+        listOf(
+            LocalDate.of(1970, 1, 1),
+            LocalDate.of(2026, 9, 6),
+            LocalDate.of(2040, 2, 29),
+        ).forEach { date ->
+            assertEquals(date, pickerMillisToLocalDate(localDateToPickerMillis(date)))
+        }
+    }
 }

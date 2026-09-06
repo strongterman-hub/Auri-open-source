@@ -29,6 +29,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -36,6 +38,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -44,11 +47,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,13 +66,24 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
+
+private const val PICKER_DAY_MILLIS = 86_400_000L
+
+internal fun localDateToPickerMillis(date: LocalDate): Long = date.toEpochDay() * PICKER_DAY_MILLIS
+
+internal fun pickerMillisToLocalDate(millis: Long): LocalDate =
+    LocalDate.ofEpochDay(Math.floorDiv(millis, PICKER_DAY_MILLIS))
 
 internal fun monthCalendarCells(month: YearMonth): List<LocalDate?> {
     val prefix = month.atDay(1).dayOfWeek.value - 1
@@ -317,6 +333,8 @@ private fun ScheduleEditor(state: EditorState, saving: Boolean, error: String?, 
     var repeat by rememberSaveable(state) { mutableStateOf(if (state.scope == "occurrence") "none" else state.draft.repeat) }
     var repeatUntil by rememberSaveable(state) { mutableStateOf(state.draft.repeatUntil?.toString().orEmpty()) }
     var formError by rememberSaveable(state) { mutableStateOf<String?>(null) }
+    var datePickerTarget by rememberSaveable(state) { mutableStateOf<String?>(null) }
+    var timePickerTarget by rememberSaveable(state) { mutableStateOf<String?>(null) }
     BackHandler(onBack = onBack)
     AuriBackground {
         Scaffold(
@@ -336,7 +354,7 @@ private fun ScheduleEditor(state: EditorState, saving: Boolean, error: String?, 
                         ScheduleDraft(title.trim(), start, end, state.draft.timezone, allDay, location.trim(), notes.trim(), reminder.takeIf { it >= 0 }, repeat,
                             repeatUntil.takeIf { it.isNotBlank() }?.let(LocalDate::parse), state.draft.status)
                     }
-                    result.onSuccess { formError = null; onSave(it) }.onFailure { formError = "请检查日期和时间格式：${it.message.orEmpty()}" }
+                    result.onSuccess { formError = null; onSave(it) }.onFailure { formError = "请检查日程时间：${it.message.orEmpty()}" }
                 }) { Text(if (saving) "保存中…" else "保存") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .7f)),
             ) },
@@ -345,10 +363,10 @@ private fun ScheduleEditor(state: EditorState, saving: Boolean, error: String?, 
                 (formError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("标题") }, singleLine = true)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("全天", Modifier.weight(1f)); Switch(allDay, { allDay = it }) }
-                OutlinedTextField(startDate, { startDate = it }, Modifier.fillMaxWidth(), label = { Text("开始日期 YYYY-MM-DD") }, singleLine = true)
-                if (!allDay) OutlinedTextField(startTime, { startTime = it }, Modifier.fillMaxWidth(), label = { Text("开始时间 HH:mm") }, singleLine = true)
-                OutlinedTextField(endDate, { endDate = it }, Modifier.fillMaxWidth(), label = { Text(if (allDay) "结束日期（包含）" else "结束日期 YYYY-MM-DD") }, singleLine = true)
-                if (!allDay) OutlinedTextField(endTime, { endTime = it }, Modifier.fillMaxWidth(), label = { Text("结束时间 HH:mm") }, singleLine = true)
+                PickerField("开始日期", LocalDate.parse(startDate).format(DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日"))) { datePickerTarget = "start" }
+                if (!allDay) PickerField("开始时间", startTime) { timePickerTarget = "start" }
+                PickerField(if (allDay) "结束日期（包含）" else "结束日期", LocalDate.parse(endDate).format(DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日"))) { datePickerTarget = "end" }
+                if (!allDay) PickerField("结束时间", endTime) { timePickerTarget = "end" }
                 OutlinedTextField(location, { location = it }, Modifier.fillMaxWidth(), label = { Text("地点（选填）") }, singleLine = true)
                 OutlinedTextField(notes, { notes = it }, Modifier.fillMaxWidth(), label = { Text("备注（选填）") }, minLines = 2)
                 Text("提前提醒", fontWeight = FontWeight.SemiBold)
@@ -370,9 +388,189 @@ private fun ScheduleEditor(state: EditorState, saving: Boolean, error: String?, 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("weekdays", "weekly").forEach { value -> FilterChip(repeat == value, { repeat = value }, { Text(repeatLabel(value)) }) }
                     }
-                    if (repeat != "none") OutlinedTextField(repeatUntil, { repeatUntil = it }, Modifier.fillMaxWidth(), label = { Text("重复截止日期（选填）") }, singleLine = true)
+                    if (repeat != "none") PickerField(
+                        "重复截止日期（选填）",
+                        repeatUntil.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日")) } ?: "不设置截止日期",
+                    ) { datePickerTarget = "repeat" }
                 }
                 Spacer(Modifier.height(32.dp))
+            }
+        }
+    }
+
+    datePickerTarget?.let { target ->
+        val initial = when (target) {
+            "start" -> LocalDate.parse(startDate)
+            "end" -> LocalDate.parse(endDate)
+            else -> repeatUntil.takeIf { it.isNotBlank() }?.let(LocalDate::parse) ?: LocalDate.parse(endDate)
+        }
+        ScheduleDatePickerDialog(
+            title = when (target) { "start" -> "选择开始日期"; "end" -> "选择结束日期"; else -> "选择重复截止日期" },
+            initialDate = initial,
+            allowClear = target == "repeat",
+            onDismiss = { datePickerTarget = null },
+            onClear = { repeatUntil = ""; datePickerTarget = null },
+            onConfirm = { selected ->
+                when (target) {
+                    "start" -> {
+                        startDate = selected.toString()
+                        if (LocalDate.parse(endDate) < selected) endDate = selected.toString()
+                    }
+                    "end" -> endDate = selected.toString()
+                    else -> repeatUntil = selected.toString()
+                }
+                datePickerTarget = null
+            },
+        )
+    }
+
+    timePickerTarget?.let { target ->
+        val initial = LocalTime.parse(if (target == "start") startTime else endTime)
+        ScheduleTimePickerDialog(
+            title = if (target == "start") "选择开始时间" else "选择结束时间",
+            initialTime = initial,
+            onDismiss = { timePickerTarget = null },
+            onConfirm = { selected ->
+                val formatted = selected.format(DateTimeFormatter.ofPattern("HH:mm"))
+                if (target == "start") startTime = formatted else endTime = formatted
+                timePickerTarget = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun PickerField(label: String, value: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = AuriTokens.TextSecondary)
+            Spacer(Modifier.height(2.dp))
+            Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        }
+        Text("选择", color = AuriTokens.Primary)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScheduleDatePickerDialog(
+    title: String,
+    initialDate: LocalDate,
+    allowClear: Boolean,
+    onDismiss: () -> Unit,
+    onClear: () -> Unit,
+    onConfirm: (LocalDate) -> Unit,
+) {
+    val pickerState = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = localDateToPickerMillis(initialDate),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedDateMillis != null,
+                onClick = { pickerState.selectedDateMillis?.let { onConfirm(pickerMillisToLocalDate(it)) } },
+            ) { Text("确定") }
+        },
+        dismissButton = {
+            Row {
+                if (allowClear) TextButton(onClick = onClear) { Text("清除") }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        },
+    ) {
+        DatePicker(
+            state = pickerState,
+            title = { Text(title, Modifier.padding(start = 24.dp, top = 16.dp)) },
+            showModeToggle = false,
+        )
+    }
+}
+
+@Composable
+private fun ScheduleTimePickerDialog(
+    title: String,
+    initialTime: LocalTime,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalTime) -> Unit,
+) {
+    var hour by rememberSaveable { mutableStateOf(initialTime.hour) }
+    var minute by rememberSaveable { mutableStateOf(initialTime.minute) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NumberWheel(0..23, hour, "时") { hour = it }
+                Text(":", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.headlineMedium)
+                NumberWheel(0..59, minute, "分") { minute = it }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(LocalTime.of(hour, minute)) }) { Text("确定") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun NumberWheel(values: IntRange, selected: Int, unit: String, onSelected: (Int) -> Unit) {
+    val itemHeight = 48.dp
+    val itemHeightPx = with(LocalDensity.current) { itemHeight.roundToPx() }
+    val initialOffset = (selected - values.first).coerceIn(0, values.count() - 1) * itemHeightPx
+    val scrollState = rememberScrollState(initialOffset)
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(scrollState, itemHeightPx) {
+        snapshotFlow { scrollState.isScrollInProgress }
+            .distinctUntilChanged()
+            .filter { !it }
+            .collect {
+                val index = (scrollState.value.toFloat() / itemHeightPx).roundToInt().coerceIn(0, values.count() - 1)
+                scrollState.animateScrollTo(index * itemHeightPx)
+                onSelected(values.first + index)
+            }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(unit, style = MaterialTheme.typography.labelMedium, color = AuriTokens.TextSecondary)
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.width(88.dp).height(240.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxWidth().height(itemHeight)
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(10.dp)),
+            )
+            Column(
+                Modifier.fillMaxSize().verticalScroll(scrollState),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(itemHeight * 2))
+                values.forEach { value ->
+                    Box(
+                        Modifier.fillMaxWidth().height(itemHeight).clickable {
+                            scope.launch {
+                                scrollState.animateScrollTo((value - values.first) * itemHeightPx)
+                                onSelected(value)
+                            }
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            value.toString().padStart(2, '0'),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = if (value == selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (value == selected) MaterialTheme.colorScheme.onPrimaryContainer else AuriTokens.TextSecondary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(itemHeight * 2))
             }
         }
     }
