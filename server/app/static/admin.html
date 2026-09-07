@@ -3,298 +3,149 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Auri 日志与消耗监控</title>
+<meta name="robots" content="noindex,nofollow" />
+<link rel="icon" href="/static/site/assets/auri-icon.png" />
+<title>Auri 运营中心</title>
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #262b36;
-    --text: #e6e8ee;
-    --muted: #8a93a6;
-    --accent: #4c8dff;
-    --green: #2ecc71;
-    --amber: #f1c40f;
-    --red: #e74c3c;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    font-size: 14px;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
-  }
-  header h1 { margin: 0; font-size: 18px; }
-  .muted { color: var(--muted); }
-  button {
-    background: var(--accent);
-    color: #fff;
-    border: 0;
-    padding: 8px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  select {
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 8px 10px;
-    border-radius: 6px;
-    margin-right: 10px;
-  }
-  .wrap { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
-  .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px;
-  }
-  .card .label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-  .card .value { font-size: 24px; font-weight: 600; }
-  .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  section { margin-top: 24px; }
-  h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 500; }
-  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; }
-  tr:last-child td { border-bottom: 0; }
-  td.num, th.num { text-align: right; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
-  canvas { width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; background: #1f2530; }
-  .pill.chat { background: #14304f; }
-  .pill.compression { background: #3a2b12; }
-  .pill.consolidation { background: #173a2b; }
+  :root { color-scheme:dark; --bg:#090b10; --surface:#11141d; --surface-2:#171b27; --surface-3:#1d2230; --border:#272d3c; --text:#f4f6fb; --muted:#9aa4b8; --dim:#69758c; --primary:#9b7bff; --primary-2:#6d4fe0; --green:#36d2aa; --amber:#f4b95f; --red:#ff6f7d; --shadow:0 18px 54px rgba(0,0,0,.26); --radius:18px; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; min-height:100%; background:var(--bg); color:var(--text); }
+  body { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  button,input,select,textarea { font:inherit; color:var(--text); }
+  button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+  .app { min-height:100vh; display:grid; grid-template-columns:224px minmax(0,1fr); }
+  .sidebar { position:sticky; top:0; height:100vh; padding:24px 16px; border-right:1px solid var(--border); background:linear-gradient(180deg,rgba(155,123,255,.1),transparent 24%),#0d1017; display:flex; flex-direction:column; z-index:10; }
+  .brand { display:flex; align-items:center; gap:12px; padding:0 8px 26px; }
+  .brand-mark { width:38px; height:38px; border-radius:13px; display:block; object-fit:cover; box-shadow:0 10px 28px rgba(155,123,255,.28); }
+  .brand strong { display:block; font-size:16px; letter-spacing:.02em; } .brand span { color:var(--muted); font-size:12px; }
+  .nav { display:grid; gap:7px; }
+  .nav-button { appearance:none; border:0; background:transparent; color:var(--muted); min-height:44px; width:100%; border-radius:13px; padding:10px 12px; display:flex; align-items:center; gap:11px; cursor:pointer; text-align:left; }
+  .nav-button svg { width:19px; height:19px; stroke:currentColor; fill:none; stroke-width:1.8; }
+  .nav-button:hover { background:var(--surface-2); color:var(--text); }
+  .nav-button.active { color:var(--text); background:linear-gradient(110deg,rgba(155,123,255,.24),rgba(54,210,170,.08)); } .nav-button.active svg { color:var(--primary); }
+  .sidebar-foot { margin-top:auto; display:grid; gap:12px; padding:16px 8px 0; color:var(--dim); font-size:12px; }
+  .logout { border:1px solid var(--border); background:transparent; border-radius:11px; min-height:40px; cursor:pointer; }
+  .main { min-width:0; }
+  .topbar { position:sticky; top:0; z-index:8; min-height:72px; padding:13px clamp(18px,3vw,40px); border-bottom:1px solid rgba(39,45,60,.82); background:rgba(9,11,16,.88); backdrop-filter:blur(16px); display:flex; align-items:center; justify-content:space-between; gap:20px; }
+  .page-heading h1 { margin:0; font-size:20px; letter-spacing:-.01em; } .page-heading p { margin:2px 0 0; color:var(--muted); font-size:12px; }
+  .global-controls { display:flex; align-items:center; justify-content:flex-end; gap:9px; min-width:0; }
+  select,input[type="text"],input[type="number"],input[type="url"],input[type="file"],textarea { border:1px solid var(--border); background:var(--surface); border-radius:11px; min-height:40px; padding:8px 11px; }
+  select { max-width:280px; }
+  .button { border:1px solid transparent; border-radius:11px; min-height:40px; padding:8px 14px; cursor:pointer; background:linear-gradient(135deg,var(--primary),var(--primary-2)); color:white; font-weight:650; }
+  .button.secondary { background:var(--surface-2); border-color:var(--border); font-weight:550; } .button.danger { background:rgba(255,111,125,.12); border-color:rgba(255,111,125,.35); color:#ffc2c8; } .button:disabled { opacity:.5; cursor:not-allowed; }
+  .refresh-state { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .content { padding:28px clamp(18px,3vw,40px) 60px; max-width:1680px; margin:0 auto; }
+  .page { display:none; } .page.active { display:block; }
+  .section-head { display:flex; justify-content:space-between; align-items:end; gap:16px; margin:30px 0 13px; } .section-head:first-child { margin-top:0; }
+  h2 { margin:0; font-size:16px; } .section-head p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+  .metric-grid { display:grid; grid-template-columns:repeat(6,minmax(145px,1fr)); gap:12px; }
+  .metric { min-width:0; padding:17px; background:linear-gradient(145deg,var(--surface-2),var(--surface)); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+  .metric .label { color:var(--muted); font-size:12px; } .metric .value { margin-top:9px; font-size:clamp(21px,2vw,28px); line-height:1.1; font-weight:760; letter-spacing:-.025em; } .metric .sub { min-height:18px; margin-top:8px; color:var(--dim); font-size:12px; }
+  .metric.good .value { color:var(--green); } .metric.warn .value { color:var(--amber); } .metric.bad .value { color:var(--red); }
+  .dashboard-grid { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(280px,.85fr); gap:14px; }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; } .panel-body { padding:18px; }
+  .panel-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; } .panel-title strong { font-size:14px; } .panel-title span { color:var(--muted); font-size:12px; }
+  .chart { width:100%; min-height:250px; display:block; } .chart text { fill:var(--dim); font-size:11px; } .chart .grid-line { stroke:var(--border); stroke-width:1; } .chart .area { fill:url(#chart-gradient); } .chart .line { fill:none; stroke:var(--primary); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; } .chart .point { fill:var(--surface); stroke:var(--green); stroke-width:2; }
+  .attention-list { display:grid; gap:9px; } .attention { display:flex; gap:10px; align-items:flex-start; padding:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:13px; }
+  .attention-dot { width:8px; height:8px; border-radius:50%; margin-top:6px; background:var(--green); flex:0 0 auto; } .attention.warn .attention-dot { background:var(--amber); } .attention.bad .attention-dot { background:var(--red); }
+  .attention strong { display:block; font-size:13px; } .attention small { color:var(--muted); }
+  .bars { display:grid; gap:12px; } .bar-row { display:grid; grid-template-columns:minmax(120px,1fr) 2fr auto; gap:10px; align-items:center; } .bar-track { height:7px; border-radius:999px; background:var(--surface-3); overflow:hidden; } .bar-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--primary),var(--green)); } .bar-row small { color:var(--muted); }
+  .filters { display:grid; grid-template-columns:repeat(6,minmax(120px,1fr)); gap:9px; padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:16px; margin-bottom:13px; } .filters .wide { grid-column:span 2; }
+  .filters > * { min-width:0; width:100%; }
+  .segmented { display:inline-flex; padding:4px; border:1px solid var(--border); background:var(--surface); border-radius:12px; } .segment { min-height:34px; border:0; border-radius:8px; padding:5px 12px; background:transparent; color:var(--muted); cursor:pointer; } .segment.active { background:var(--surface-3); color:var(--text); }
+  .table-wrap { overflow:auto; border:1px solid var(--border); border-radius:16px; background:var(--surface); } table { width:100%; border-collapse:separate; border-spacing:0; min-width:780px; }
+  th,td { padding:11px 13px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; font-variant-numeric:tabular-nums; } th { position:sticky; top:0; z-index:1; background:var(--surface-2); color:var(--muted); font-size:11px; font-weight:650; } tbody tr:last-child td { border-bottom:0; } tbody tr:hover td { background:rgba(155,123,255,.035); }
+  td.num,th.num { text-align:right; } .mono { font-family:"SFMono-Regular",Consolas,monospace; font-size:12px; }
+  .status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 8px; background:var(--surface-3); color:var(--muted); font-size:11px; } .status.good { color:#92efd6; background:rgba(54,210,170,.1); } .status.bad { color:#ffc2c8; background:rgba(255,111,125,.11); } .status.warn { color:#ffdb9e; background:rgba(244,185,95,.11); }
+  .pill { display:inline-flex; margin:1px 3px 1px 0; border-radius:999px; padding:2px 7px; background:var(--surface-3); color:#cbd3e2; font-size:11px; } .row-button { border:0; background:transparent; color:var(--primary); cursor:pointer; padding:0; }
+  .mobile-cards { display:none; } .mobile-card { padding:14px; border:1px solid var(--border); border-radius:15px; background:var(--surface); } .mobile-card+.mobile-card { margin-top:9px; } .mobile-card .title { font-weight:650; overflow-wrap:anywhere; }
+  .kv { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; } .kv span { color:var(--muted); font-size:11px; display:block; } .kv strong { font-size:13px; overflow-wrap:anywhere; }
+  .pagination { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:12px; color:var(--muted); }
+  .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; } .field { display:grid; gap:6px; } .field.full { grid-column:1/-1; } .field label { color:var(--muted); font-size:12px; } textarea { min-height:130px; resize:vertical; } .checkbox { display:flex; align-items:center; gap:9px; min-height:40px; }
+  .release-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; } .release-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:18px; } .release-item { padding:13px; border-radius:13px; background:var(--surface-2); border:1px solid var(--border); min-width:0; } .release-item span { display:block; color:var(--muted); font-size:11px; } .release-item strong { display:block; margin-top:5px; overflow-wrap:anywhere; }
+  .system-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; } .status-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; } .status-tile { padding:12px; border-radius:13px; background:var(--surface-2); border:1px solid var(--border); } .status-tile span { color:var(--muted); font-size:11px; } .status-tile strong { display:block; margin-top:4px; } .status-tile small { color:var(--dim); display:block; margin-top:3px; }
+  .toast { position:fixed; right:24px; bottom:24px; z-index:50; max-width:min(420px,calc(100vw - 32px)); padding:13px 15px; background:#252b3a; border:1px solid var(--border); border-radius:13px; box-shadow:var(--shadow); display:none; } .toast.show { display:block; } .toast.bad { border-color:rgba(255,111,125,.5); }
+  .empty { padding:28px; text-align:center; color:var(--muted); } .skeleton { min-height:100px; background:linear-gradient(90deg,var(--surface),var(--surface-2),var(--surface)); background-size:200% 100%; animation:shimmer 1.3s infinite; } @keyframes shimmer { to { background-position:-200% 0; } }
+  @media (max-width:1180px) { .metric-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width:820px) { .app { display:block; } .sidebar { position:sticky; height:auto; padding:10px 14px 0; border-right:0; border-bottom:1px solid var(--border); } .brand { padding:0 4px 9px; } .brand-mark { width:34px; height:34px; } .brand span { display:none; } .nav { display:flex; gap:5px; overflow-x:auto; padding-bottom:9px; scrollbar-width:none; } .nav::-webkit-scrollbar { display:none; } .nav-button { width:auto; min-width:max-content; padding:8px 11px; min-height:40px; } .sidebar-foot { display:none; } .topbar { position:relative; min-height:0; padding:13px 16px; display:block; } .page-heading { margin-bottom:11px; } .global-controls { display:grid; grid-template-columns:1fr 1fr auto; justify-content:stretch; } .global-controls select { width:100%; max-width:none; } .refresh-state { grid-column:1/-1; } .content { padding:20px 16px 46px; } .dashboard-grid,.system-grid { grid-template-columns:1fr; } .form-grid { grid-template-columns:1fr; } .field.full { grid-column:auto; } .release-summary { grid-template-columns:1fr; } }
+  @media (max-width:620px) { .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .metric { padding:14px; } .metric .value { font-size:22px; } .filters { grid-template-columns:1fr 1fr; } .filters .wide { grid-column:1/-1; } .desktop-table { display:none; } .mobile-cards { display:block; } .status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .bar-row { grid-template-columns:minmax(90px,1fr) 1.4fr auto; } }
+  @media (max-width:390px) { .global-controls { grid-template-columns:1fr 1fr; } .global-controls .button { grid-column:1/-1; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Auri 日志与消耗监控</h1>
-  <div>
-    <select id="user-select"><option value="">总体</option></select>
-    <span class="muted" id="generated"></span>
-    <button id="refresh">刷新</button>
-    <button id="logout" style="background:#262b36;margin-left:8px;">退出</button>
-  </div>
-</header>
-
-<div class="wrap">
-  <div class="cards" id="cards"></div>
-
-  <section>
-    <h2>按用户统计</h2>
-    <div id="by-user"></div>
-  </section>
-
-  <section>
-    <h2>对话轮次（工具调用 & 响应时间）</h2>
-    <div class="muted" id="turns-summary" style="margin-bottom:10px;"></div>
-    <div id="tool-counts" style="margin-bottom:14px;"></div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr>
-            <th>时间</th><th>用户</th><th>模型</th>
-            <th class="num">耗时(ms)</th><th class="num">LLM轮次</th>
-            <th>工具调用</th><th class="num">输入</th><th class="num">输出</th>
-            <th class="num">费用(元)</th><th>状态</th>
-          </tr>
-        </thead>
-        <tbody id="turns-recent"></tbody>
-      </table>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-mark" src="/static/site/assets/auri-icon.png" alt="" width="38" height="38" /><div><strong>Auri</strong><span>运营中心</span></div></div>
+    <nav class="nav" aria-label="后台导航">
+      <button class="nav-button active" data-page="overview"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zm10 7h6V11h-6zM4 20h6v-3H4zm10-13h6V4h-6z"/></svg>总览</button>
+      <button class="nav-button" data-page="users"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>用户与 Credits</button>
+      <button class="nav-button" data-page="calls"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 8h8M8 12h5M8 16h7"/></svg>对话与工具</button>
+      <button class="nav-button" data-page="release"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2"/></svg>版本发布</button>
+      <button class="nav-button" data-page="system"><svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6v.08H10V20a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4v-4h.08a1.7 1.7 0 0 0 .52-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4h4v.08a1.7 1.7 0 0 0 1 .52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.08.38.28.73.6 1h.08v4H20a1.7 1.7 0 0 0-.6 1z"/></svg>系统与费率</button>
+    </nav>
+    <div class="sidebar-foot"><span>仅限已认证管理员</span><button class="logout" id="logout">退出登录</button></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="page-heading"><h1 id="page-title">运营总览</h1><p id="page-subtitle">先看异常，再看消耗</p></div><div class="global-controls"><select id="days" aria-label="统计周期"><option value="1">今天</option><option value="7">最近 7 天</option><option value="30" selected>最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select><select id="user-select" aria-label="筛选账号"><option value="">全部账号</option></select><button class="button" id="refresh">刷新</button><span class="refresh-state" id="generated">等待加载</span></div></header>
+    <div class="content">
+      <section class="page active" id="page-overview">
+        <div class="metric-grid" id="metrics"><div class="metric skeleton"></div><div class="metric skeleton"></div><div class="metric skeleton"></div></div>
+        <div class="section-head"><div><h2>费用趋势</h2><p>按北京时间聚合，悬停查看当天数据</p></div></div>
+        <div class="dashboard-grid"><div class="panel"><div class="panel-body"><div class="panel-title"><strong>每日模型费用</strong><span id="chart-total"></span></div><div id="chart"></div></div></div><div class="panel"><div class="panel-body"><div class="panel-title"><strong>需要关注</strong><span>当前筛选范围</span></div><div class="attention-list" id="attention"></div></div></div></div>
+        <div class="section-head"><div><h2>调用构成</h2><p>不同任务类型的请求与费用占比</p></div></div><div class="panel"><div class="panel-body"><div class="bars" id="kind-bars"></div></div></div>
+      </section>
+      <section class="page" id="page-users"><div class="section-head"><div><h2>用户与 Credits</h2><p>完整账号显示；余额读取不会创建或修改账本</p></div></div><div class="table-wrap desktop-table"><table><thead><tr><th>账号</th><th class="num">Credits</th><th class="num">请求</th><th class="num">输入（命中 / 未命中）</th><th class="num">输出</th><th class="num">费用</th><th class="num">已支付</th><th>余额更新</th></tr></thead><tbody id="users-body"></tbody></table></div><div class="mobile-cards" id="users-cards"></div></section>
+      <section class="page" id="page-calls">
+        <div class="section-head"><div><h2>对话与工具</h2><p>筛选失败、慢请求和具体工具调用</p></div><div class="segmented"><button class="segment active" data-call-view="turns">对话轮次</button><button class="segment" data-call-view="requests">LLM 请求</button></div></div>
+        <div class="filters"><input class="wide" id="call-query" type="text" placeholder="搜索账号、会话、模型或工具" aria-label="关键字" /><select id="call-model" aria-label="模型"><option value="">全部模型</option></select><select id="call-kind" aria-label="调用类型"><option value="">全部类型</option></select><select id="call-status" aria-label="状态"><option value="">全部状态</option></select><select id="call-tool" aria-label="工具"><option value="">全部工具</option></select><select id="call-speed" aria-label="耗时"><option value="">全部耗时</option><option value="10000">≥ 10 秒</option><option value="30000">≥ 30 秒</option></select><button class="button secondary" id="clear-filters">清除筛选</button></div>
+        <div id="turns-view"><div class="table-wrap desktop-table"><table><thead><tr><th>时间</th><th>账号</th><th>模型</th><th class="num">耗时</th><th class="num">LLM</th><th>工具</th><th class="num">输入</th><th class="num">输出</th><th class="num">费用</th><th>状态</th><th></th></tr></thead><tbody id="turns-body"></tbody></table></div><div class="mobile-cards" id="turns-cards"></div><div class="pagination" id="turns-pagination"></div></div>
+        <div id="requests-view" hidden><div class="table-wrap desktop-table"><table><thead><tr><th>时间</th><th>账号</th><th>模型</th><th>类型</th><th>会话</th><th class="num">输入（命中 / 未命中）</th><th class="num">输出</th><th class="num">耗时</th><th class="num">费用</th></tr></thead><tbody id="requests-body"></tbody></table></div><div class="mobile-cards" id="requests-cards"></div><div class="pagination" id="requests-pagination"></div></div>
+      </section>
+      <section class="page" id="page-release"><div class="section-head"><div><h2>版本发布</h2><p>上传、保存元数据和推送是三个独立步骤</p></div></div><div class="panel"><div class="panel-body"><div class="release-summary" id="release-summary"></div><div class="form-grid"><div class="field"><label for="version-code">Version code</label><input id="version-code" type="number" min="1" /></div><div class="field"><label for="version-name">Version name</label><input id="version-name" type="text" /></div><div class="field full"><label for="download-url">下载地址（留空使用默认不可变地址）</label><input id="download-url" type="url" /></div><div class="field full"><label for="changelog">更新说明</label><textarea id="changelog"></textarea></div><label class="checkbox"><input id="force-update" type="checkbox" /> 强制更新</label><div class="field full"><label for="apk-file">候选 APK（选择文件不会自动上传）</label><input id="apk-file" type="file" accept=".apk,application/vnd.android.package-archive" /></div></div><div class="release-actions"><button class="button secondary" id="upload-apk">上传候选 APK</button><button class="button" id="save-release">保存版本元数据</button><button class="button danger" id="push-release">发送更新检查</button></div></div></div></section>
+      <section class="page" id="page-system"><div class="system-grid"><div><div class="section-head"><div><h2>运行状态</h2><p>进程、配置与后台调度器</p></div></div><div class="panel"><div class="panel-body"><div class="status-grid" id="system-status"></div></div></div></div><div><div class="section-head"><div><h2>日志文件</h2><p>只展示体积和最近更新时间</p></div></div><div class="panel"><div class="panel-body"><div class="status-grid" id="log-status"></div></div></div></div></div><div class="section-head"><div><h2>官方费率参考</h2><p id="pricing-note"></p></div></div><div class="table-wrap"><table><thead><tr><th>模型</th><th class="num">输入命中 峰 / 闲</th><th class="num">输入未命中 峰 / 闲</th><th class="num">输出 峰 / 闲</th></tr></thead><tbody id="pricing-body"></tbody></table></div></section>
     </div>
-  </section>
-
-  <section>
-    <h2>每日消耗（元）</h2>
-    <canvas id="chart" height="180"></canvas>
-  </section>
-
-  <section class="grid-2">
-    <div>
-      <h2>按模型</h2>
-      <div id="by-model"></div>
-    </div>
-    <div>
-      <h2>按调用类型</h2>
-      <div id="by-kind"></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>最近请求</h2>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr>
-            <th>时间</th><th>模型</th><th>类型</th><th>会话</th>
-            <th class="num">输入(命中/未命中)</th><th class="num">输出</th>
-            <th class="num">耗时(ms)</th><th class="num">费用(元)</th>
-          </tr>
-        </thead>
-        <tbody id="recent"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section>
-    <h2>官方费率参考</h2>
-    <div id="pricing"></div>
-  </section>
+  </main>
 </div>
-
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
-async function apiFetch(url, options) {
-  const res = await fetch(url, options);
-  if (res.status === 401) {
-    window.location.href = "/admin/login";
-    throw new Error("unauthorized");
-  }
-  return res;
-}
-
-function money(v) {
-  if (v === 0) return "¥0";
-  const s = v.toFixed(6);
-  return "¥" + s.replace(/\.?0+$/, "");
-}
-function num(v) { return (v ?? 0).toLocaleString("zh-CN"); }
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-}
-let currentUserId = "";
-
-function kindPill(kind) {
-  const k = esc(kind || "unknown");
-  return `<span class="pill ${k}">${k}</span>`;
-}
-
-async function loadUsage() {
-  const qs = new URLSearchParams({ days: "30", limit: "200" });
-  if (currentUserId) qs.set("user_id", currentUserId);
-  const res = await apiFetch("/admin/api/usage?" + qs.toString());
-  const data = await res.json();
-  const t = data.totals || {};
-  document.getElementById("generated").textContent = "生成于 " + (data.generated_at || "");
-  document.getElementById("cards").innerHTML = [
-    ["累计费用", money(t.cost || 0), "30 天内"],
-    ["输入 tokens", num((t.prompt_tokens || 0)), "命中 " + num(t.cached_tokens || 0) + " / 未命中 " + num(t.uncached_tokens || 0)],
-    ["输出 tokens", num(t.completion_tokens || 0), ""],
-    ["请求次数", num(t.requests || 0), ""],
-  ].map(([label, value, sub]) =>
-    `<div class="card"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`
-  ).join("");
-
-  document.getElementById("by-model").innerHTML = tableRows(
-    ["模型", "请求", "输入", "输出", "费用"],
-    (data.by_model || []).map(m => [m.model, num(m.requests), num(m.prompt_tokens), num(m.completion_tokens), money(m.cost)])
-  );
-  document.getElementById("by-kind").innerHTML = tableRows(
-    ["类型", "请求", "费用"],
-    (data.by_kind || []).map(k => [k.kind, num(k.requests), money(k.cost)])
-  );
-  const select = document.getElementById("user-select");
-  select.innerHTML = '<option value="">总体</option>' + (data.by_user || []).map(u =>
-    `<option value="${esc(u.user_id)}">${esc(u.user_id)}</option>`
-  ).join("");
-  select.value = currentUserId;
-  document.getElementById("by-user").innerHTML = tableRows(
-    ["用户", "请求", "输入(命中/未命中)", "输出", "费用"],
-    (data.by_user || []).map(u => [u.user_id, num(u.requests), num(u.cached_tokens) + " / " + num(u.uncached_tokens), num(u.completion_tokens), money(u.cost)])
-  );
-  document.getElementById("recent").innerHTML = (data.recent || []).map(r =>
-    `<tr><td>${esc(r.ts)}</td><td>${esc(r.model)}</td><td>${kindPill(r.kind)}</td><td class="muted">${esc(r.session_id || "-")}</td>` +
-    `<td class="num">${num(r.cached_tokens)} / ${num(r.uncached_tokens)}</td><td class="num">${num(r.completion_tokens)}</td>` +
-    `<td class="num">${r.duration_ms == null ? "-" : Math.round(r.duration_ms)}</td><td class="num">${money(r.cost)}</td></tr>`
-  ).join("") || '<tr><td colspan="8" class="muted">暂无数据</td></tr>';
-
-  drawChart(data.daily || []);
-}
-
-async function loadTurns() {
-  const qs = new URLSearchParams({ days: "30", limit: "100" });
-  if (currentUserId) qs.set("user_id", currentUserId);
-  const res = await apiFetch("/admin/api/turns?" + qs.toString());
-  const data = await res.json();
-  const t = data.totals || {};
-  document.getElementById("turns-summary").textContent =
-    "轮次 " + num(t.turns) + " · 平均耗时 " + Math.round(t.avg_duration_ms) + "ms · 工具调用 " + num(t.tool_calls) + " · 错误 " + num(t.errors);
-  document.getElementById("tool-counts").innerHTML = (data.tool_counts || []).map(tc =>
-    `<span class="pill">${esc(tc.name)} ×${num(tc.count)}</span> `
-  ).join("");
-  document.getElementById("turns-recent").innerHTML = (data.recent || []).map(r =>
-    `<tr><td>${esc(r.started_at)}</td><td>${esc(r.user_id || "-")}</td><td>${esc(r.model)}</td>` +
-    `<td class="num">${r.duration_ms == null ? "-" : Math.round(r.duration_ms)}</td><td class="num">${num(r.llm_calls)}</td>` +
-    `<td>${(r.tool_calls || []).map(tc => esc(tc.name) + (tc.error ? "⚠" : "")).join(", ") || "-"}</td>` +
-    `<td class="num">${num(r.prompt_tokens)}</td><td class="num">${num(r.completion_tokens)}</td>` +
-    `<td class="num">${money(r.cost)}</td><td>${esc(r.status || "-")}</td></tr>`
-  ).join("") || '<tr><td colspan="10" class="muted">暂无数据</td></tr>';
-}
-
-function tableRows(headers, rows) {
-  const head = `<tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr>`;
-  const body = rows.map(r => `<tr>${r.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${i === 0 ? esc(c) : c}</td>`).join("")}</tr>`).join("");
-  return `<table><thead>${head}</thead><tbody>${body || '<tr><td colspan="'+headers.length+'" class="muted">暂无数据</td></tr>'}</tbody></table>`;
-}
-
-function drawChart(daily) {
-  const canvas = document.getElementById("chart");
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = 180 * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  const W = rect.width, H = 180;
-  ctx.clearRect(0, 0, W, H);
-  if (!daily.length) { ctx.fillStyle = "#8a93a6"; ctx.fillText("暂无数据", 16, 30); return; }
-  const max = Math.max(...daily.map(d => d.cost), 0.000001);
-  const pad = 8, bw = (W - pad * 2) / daily.length;
-  ctx.strokeStyle = "#262b36"; ctx.beginPath(); ctx.moveTo(pad, H - 20); ctx.lineTo(W - pad, H - 20); ctx.stroke();
-  daily.forEach((d, i) => {
-    const h = Math.max(1, (d.cost / max) * (H - 40));
-    const x = pad + i * bw;
-    ctx.fillStyle = "#4c8dff";
-    ctx.fillRect(x, H - 20 - h, Math.max(2, bw - 2), h);
-  });
-}
-
-async function loadPricing() {
-  const res = await apiFetch("/admin/api/pricing");
-  const data = await res.json();
-  const p = data.pricing || {};
-  const models = Object.keys(p);
-  const rows = [["模型", "输入(命中) 峰/闲", "输入(未命中) 峰/闲", "输出 峰/闲"]];
-  models.forEach(m => {
-    const r = p[m];
-    rows.push([m,
-      r.cache_hit.peak + " / " + r.cache_hit.offpeak,
-      r.cache_miss.peak + " / " + r.cache_miss.offpeak,
-      r.output.peak + " / " + r.output.offpeak]);
-  });
-  document.getElementById("pricing").innerHTML =
-    tableRows(rows[0], rows.slice(1)) + `<p class="muted">单位：${data.unit}；${data.peak_hours}</p>`;
-}
-
-document.getElementById("refresh").onclick = () => { loadUsage(); loadTurns(); };
-document.getElementById("user-select").onchange = (e) => { currentUserId = e.target.value; loadUsage(); loadTurns(); };
-document.getElementById("logout").onclick = async () => {
-  await fetch("/admin/logout", { method: "POST" });
-  window.location.href = "/admin/login";
-};
-loadUsage();
-loadTurns();
-loadPricing();
-setInterval(() => { loadUsage(); loadTurns(); }, 30000);
+const state={days:30,userId:"",page:"overview",callView:"turns",turnOffset:0,usageOffset:0,pageSize:20,usage:null,turns:null,overview:null,users:null,pricing:null,release:null,busy:false};
+const pageMeta={overview:["运营总览","先看异常，再看消耗"],users:["用户与 Credits","完整账号与真实余额"],calls:["对话与工具","定位失败、慢请求与调用细节"],release:["版本发布","发布与推送分步确认"],system:["系统与费率","运行状态与计费依据"]};
+const $=id=>document.getElementById(id); const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); const number=value=>Number(value||0).toLocaleString("zh-CN");
+const money=(value,summary=false)=>{const n=Number(value||0),digits=summary?2:(Math.abs(n)<.01&&n!==0?6:4);return"¥"+n.toLocaleString("zh-CN",{minimumFractionDigits:summary?2:0,maximumFractionDigits:digits});};
+const credits=value=>value==null?"—":Number(value).toLocaleString("zh-CN",{maximumFractionDigits:3}); const duration=ms=>{const n=Number(ms||0);return n>=1000?(n/1000).toFixed(n>=10000?1:2)+" 秒":Math.round(n)+" ms";};
+const bytes=value=>{let n=Number(value||0);const units=["B","KB","MB","GB"];let i=0;while(n>=1024&&i<3){n/=1024;i++;}return n.toFixed(i?1:0)+" "+units[i];};
+const time=(value,full=false)=>value?new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",...(full?{year:"numeric"}:{})}).format(new Date(value)).replaceAll("/","-"):"—";
+const okStatus=value=>["completed","success","ok"].includes(String(value||"").toLowerCase());
+const toast=(message,bad=false)=>{const el=$("toast");el.textContent=message;el.className="toast show"+(bad?" bad":"");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.className="toast",4200);};
+async function apiFetch(url,options={}){const response=await fetch(url,options);if(response.status===401){location.href="/admin/login";throw new Error("登录已失效");}let data={};try{data=await response.json();}catch(_){}if(!response.ok)throw new Error(data.detail||`请求失败（${response.status}）`);return data;}
+function queryString(params){const q=new URLSearchParams();Object.entries(params).forEach(([k,v])=>{if(v!==""&&v!=null)q.set(k,v);});return q.toString();}
+function selectedFilters(kind){const common={days:state.days,user_id:state.userId,limit:state.pageSize,query:$("call-query").value.trim()};if(kind==="turns")return{...common,offset:state.turnOffset,model:$("call-model").value,status:$("call-status").value,tool:$("call-tool").value,min_duration_ms:$("call-speed").value};return{...common,offset:state.usageOffset,model:$("call-model").value,kind:$("call-kind").value};}
+async function loadCore(){const base={days:state.days,user_id:state.userId,limit:20};const[overview,usage,turns,users,pricing,release]=await Promise.all([apiFetch("/admin/api/overview"),apiFetch("/admin/api/usage?"+queryString(base)),apiFetch("/admin/api/turns?"+queryString(base)),apiFetch("/admin/api/users?"+queryString({days:state.days})),apiFetch("/admin/api/pricing"),apiFetch("/admin/api/update")]);Object.assign(state,{overview,usage,turns,users,pricing,release});populateGlobalUsers(usage.by_user||[]);populateCallFilters();renderAll();}
+async function refreshAll(){if(state.busy)return;state.busy=true;$("refresh").disabled=true;$("generated").textContent="正在刷新…";try{await loadCore();$("generated").textContent="更新于 "+time(state.overview.generated_at);}catch(error){toast(error.message,true);$("generated").textContent="刷新失败，可重试";}finally{state.busy=false;$("refresh").disabled=false;}}
+async function loadCalls(reset=false){if(reset){state.turnOffset=0;state.usageOffset=0;}try{if(state.callView==="turns")state.turns=await apiFetch("/admin/api/turns?"+queryString(selectedFilters("turns")));else state.usage=await apiFetch("/admin/api/usage?"+queryString(selectedFilters("usage")));populateCallFilters();renderCalls();}catch(error){toast(error.message,true);}}
+function populateGlobalUsers(users){const select=$("user-select"),current=state.userId;select.innerHTML='<option value="">全部账号</option>'+users.map(u=>`<option value="${esc(u.user_id)}">${esc(u.user_id)}</option>`).join("");select.value=current;}
+function fillSelect(id,values,label){const el=$(id),current=el.value;el.innerHTML=`<option value="">${label}</option>`+values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");el.value=values.includes(current)?current:"";}
+function populateCallFilters(){const u=state.usage?.filters||{},t=state.turns?.filters||{};fillSelect("call-model",[...new Set([...(u.models||[]),...(t.models||[])])],"全部模型");fillSelect("call-kind",u.kinds||[],"全部类型");fillSelect("call-status",t.statuses||[],"全部状态");fillSelect("call-tool",t.tools||[],"全部工具");}
+function renderAll(){renderOverview();renderUsers();renderCalls();renderRelease();renderSystem();}
+function renderOverview(){const u=state.usage||{},t=state.turns||{},o=state.overview||{},totals=u.totals||{},tt=t.totals||{},prompt=Number(totals.prompt_tokens||0),hit=Number(totals.cached_tokens||0),hitRate=prompt?hit/prompt*100:0;const metrics=[["周期费用",money(totals.cost,true),`${state.days} 天 · ${state.userId||"全部账号"}`,""],["LLM 请求",number(totals.requests),`平均 ${totals.requests?money(totals.cost/totals.requests):"¥0"} / 次`,""],["平均响应",duration(tt.avg_duration_ms),`${number(tt.turns)} 个对话轮次`,tt.avg_duration_ms>=10000?"warn":""],["失败信号",number((tt.failed_turns||0)+(tt.errors||0)),`失败轮次 ${number(tt.failed_turns)} · 工具错误 ${number(tt.errors)}`,(tt.failed_turns||tt.errors)?"bad":"good"],["缓存命中率",hitRate.toFixed(1)+"%",`${number(hit)} / ${number(prompt)}`,hitRate>=40?"good":"warn"],["设备与版本",`${number(o.device_tokens)} / ${esc(o.release?.version_name||"—")}`,`${number(o.users)} 个账号 · ${o.release?.force?"强制更新":"普通更新"}`,o.release?.apk_exists?"good":"warn"]];$("metrics").innerHTML=metrics.map(([label,value,sub,klass])=>`<div class="metric ${klass}"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`).join("");renderChart(u.daily||[]);renderAttention(t,o);renderKindBars(u.by_kind||[]);}
+function renderChart(daily){$("chart-total").textContent=money(daily.reduce((s,d)=>s+Number(d.cost||0),0),true);if(!daily.length){$("chart").innerHTML='<div class="empty">当前范围暂无费用数据</div>';return;}const W=900,H=260,p={l:52,r:18,t:18,b:34},max=Math.max(...daily.map(d=>Number(d.cost||0)),.000001),x=i=>p.l+i*(W-p.l-p.r)/Math.max(1,daily.length-1),y=v=>H-p.b-v/max*(H-p.t-p.b),points=daily.map((d,i)=>`${x(i)},${y(Number(d.cost||0))}`).join(" "),area=`${p.l},${H-p.b} ${points} ${x(daily.length-1)},${H-p.b}`,grid=[0,.25,.5,.75,1].map(r=>`<line class="grid-line" x1="${p.l}" y1="${y(max*r)}" x2="${W-p.r}" y2="${y(max*r)}"/><text x="4" y="${y(max*r)+4}">${money(max*r)}</text>`).join(""),labels=daily.map((d,i)=>i%Math.max(1,Math.ceil(daily.length/6))===0||i===daily.length-1?`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(d.day.slice(5))}</text>`:"").join(""),dots=daily.map((d,i)=>`<circle class="point" cx="${x(i)}" cy="${y(Number(d.cost||0))}" r="4"><title>${esc(d.day)} · ${money(d.cost)} · ${number(d.requests)} 次</title></circle>`).join("");$("chart").innerHTML=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="每日费用趋势"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9b7bff" stop-opacity=".35"/><stop offset="1" stop-color="#9b7bff" stop-opacity="0"/></linearGradient></defs>${grid}<polygon class="area" points="${area}"/><polyline class="line" points="${points}"/>${dots}${labels}</svg>`;}
+function renderAttention(turns,overview){const t=turns.totals||{},items=[];if(t.failed_turns)items.push(["bad",`${number(t.failed_turns)} 个失败轮次`,"进入“对话与工具”按状态筛选"]);if(t.errors)items.push(["bad",`${number(t.errors)} 个工具错误`,"展开轮次查看错误详情"]);if(t.slow_turns)items.push(["warn",`${number(t.slow_turns)} 个慢轮次`,"耗时达到或超过 10 秒"]);if(!overview.release?.apk_exists)items.push(["warn","当前没有可用 APK","版本发布页可上传候选包"]);const required={chat_reply:overview.configuration?.chat_reply,proactive:overview.configuration?.proactive,health_sync:overview.configuration?.health_sync,weather:overview.configuration?.weather,reminder:overview.configuration?.reminder,schedule:overview.configuration?.reminder},stopped=Object.entries(overview.schedulers||{}).filter(([key,value])=>required[key]&&!value).map(([key])=>key);if(stopped.length)items.push(["warn",`${stopped.length} 个调度器异常`,stopped.join("、")]);if(!items.length)items.push(["","当前没有明显异常","关键调用与调度器均正常"]);$("attention").innerHTML=items.map(([kind,title,sub])=>`<div class="attention ${kind}"><span class="attention-dot"></span><div><strong>${title}</strong><small>${sub}</small></div></div>`).join("");}
+function renderKindBars(rows){const max=Math.max(...rows.map(d=>Number(d.cost||0)),.000001);$("kind-bars").innerHTML=rows.length?rows.map(r=>`<div class="bar-row"><span class="mono">${esc(r.kind)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(1,Number(r.cost||0)/max*100)}%"></div></div><small>${number(r.requests)} · ${money(r.cost)}</small></div>`).join(""):'<div class="empty">当前范围暂无调用</div>';}
+function renderUsers(){const rows=state.users?.users||[];$("users-body").innerHTML=rows.length?rows.map(r=>`<tr><td><button class="row-button user-link" data-user="${esc(r.user_id)}">${esc(r.user_id)}</button></td><td class="num">${credits(r.balance_credits)}</td><td class="num">${number(r.requests)}</td><td class="num">${number(r.cached_tokens)} / ${number(r.uncached_tokens)}</td><td class="num">${number(r.completion_tokens)}</td><td class="num">${money(r.cost)}</td><td class="num">${money(r.paid_yuan,true)} · ${number(r.paid_orders)} 单</td><td>${time(r.balance_updated_at)}</td></tr>`).join(""):'<tr><td colspan="8" class="empty">暂无用户</td></tr>';$("users-cards").innerHTML=rows.map(r=>`<article class="mobile-card"><button class="row-button title user-link" data-user="${esc(r.user_id)}">${esc(r.user_id)}</button><div class="kv"><div><span>Credits</span><strong>${credits(r.balance_credits)}</strong></div><div><span>请求</span><strong>${number(r.requests)}</strong></div><div><span>费用</span><strong>${money(r.cost)}</strong></div><div><span>已支付</span><strong>${money(r.paid_yuan,true)}</strong></div></div></article>`).join("")||'<div class="empty">暂无用户</div>';document.querySelectorAll(".user-link").forEach(button=>button.onclick=()=>{state.userId=button.dataset.user;$("user-select").value=state.userId;switchPage("overview");refreshAll();});}
+function tools(calls){return calls.length?calls.map(call=>`<span class="pill">${esc(call.name)}${call.error?" ⚠":""}</span>`).join(""):"—";}
+function detail(turn){return`<details><summary class="row-button">详情</summary><div style="min-width:260px;margin-top:8px"><div>会话：<span class="mono">${esc(turn.session_id||"—")}</span></div><div>完整时间：${esc(turn.started_at||"—")}</div><div>响应字符：${number(turn.response_chars)}</div>${(turn.tool_calls||[]).map(call=>`<div style="margin-top:8px;padding:8px;background:var(--surface-2);border-radius:9px"><strong>${esc(call.name)}</strong> · ${duration(call.duration_ms)} · ${number(call.result_chars)} 字符${call.error?`<div style="color:var(--red);overflow-wrap:anywhere">${esc(call.error)}</div>`:""}</div>`).join("")}</div></details>`;}
+function renderCalls(){const turnRows=state.turns?.recent||[],requestRows=state.usage?.recent||[];$("turns-body").innerHTML=turnRows.length?turnRows.map(r=>`<tr><td>${time(r.started_at)}</td><td>${esc(r.user_id||"—")}</td><td class="mono">${esc(r.model)}</td><td class="num">${duration(r.duration_ms)}</td><td class="num">${number(r.llm_calls)}</td><td>${tools(r.tool_calls||[])}</td><td class="num">${number(r.prompt_tokens)}</td><td class="num">${number(r.completion_tokens)}</td><td class="num">${money(r.cost)}</td><td><span class="status ${okStatus(r.status)?"good":"bad"}">${esc(r.status||"—")}</span></td><td>${detail(r)}</td></tr>`).join(""):'<tr><td colspan="11" class="empty">没有匹配的对话轮次</td></tr>';$("turns-cards").innerHTML=turnRows.map(r=>`<article class="mobile-card"><div class="title">${esc(r.user_id||"—")}</div><small>${time(r.started_at)} · ${esc(r.model)}</small><div class="kv"><div><span>耗时</span><strong>${duration(r.duration_ms)}</strong></div><div><span>费用</span><strong>${money(r.cost)}</strong></div><div><span>状态</span><strong>${esc(r.status||"—")}</strong></div><div><span>工具</span><strong>${number((r.tool_calls||[]).length)}</strong></div></div><div style="margin-top:10px">${tools(r.tool_calls||[])}</div>${detail(r)}</article>`).join("")||'<div class="empty">没有匹配的对话轮次</div>';$("requests-body").innerHTML=requestRows.length?requestRows.map(r=>`<tr><td>${time(r.ts)}</td><td>${esc(r.user_id||"—")}</td><td class="mono">${esc(r.model)}</td><td><span class="pill">${esc(r.kind||"unknown")}</span></td><td class="mono">${esc(r.session_id||"—")}</td><td class="num">${number(r.cached_tokens)} / ${number(r.uncached_tokens)}</td><td class="num">${number(r.completion_tokens)}</td><td class="num">${duration(r.duration_ms)}</td><td class="num">${money(r.cost)}</td></tr>`).join(""):'<tr><td colspan="9" class="empty">没有匹配的 LLM 请求</td></tr>';$("requests-cards").innerHTML=requestRows.map(r=>`<article class="mobile-card"><div class="title">${esc(r.user_id||"—")}</div><small>${time(r.ts)} · ${esc(r.kind||"unknown")}</small><div class="kv"><div><span>模型</span><strong>${esc(r.model)}</strong></div><div><span>耗时</span><strong>${duration(r.duration_ms)}</strong></div><div><span>输入</span><strong>${number(r.prompt_tokens)}</strong></div><div><span>费用</span><strong>${money(r.cost)}</strong></div></div></article>`).join("")||'<div class="empty">没有匹配的 LLM 请求</div>';renderPager("turns",state.turns?.pagination||{});renderPager("requests",state.usage?.pagination||{});}
+function renderPager(type,p){const offset=Number(p.offset||0),limit=Number(p.limit||state.pageSize),total=Number(p.total||0),from=total?offset+1:0,to=Math.min(total,offset+limit),element=$(type+"-pagination");element.innerHTML=`<span>${number(from)}–${number(to)} / ${number(total)}</span><button class="button secondary" data-dir="prev" ${offset<=0?"disabled":""}>上一页</button><button class="button secondary" data-dir="next" ${offset+limit>=total?"disabled":""}>下一页</button>`;element.querySelectorAll("button").forEach(button=>button.onclick=()=>{const key=type==="turns"?"turnOffset":"usageOffset";state[key]=Math.max(0,state[key]+(button.dataset.dir==="next"?limit:-limit));loadCalls();});}
+function renderRelease(){const r=state.release||{};$("release-summary").innerHTML=[["当前版本",`${esc(r.version_name||"—")} · code ${number(r.version_code)}`],["APK",r.apk_exists?`${bytes(r.apk_size_on_disk||r.size)} · 已就绪`:"未上传"],["SHA-256",r.sha256?`<span class="mono">${esc(r.sha256)}</span>`:"—"]].map(([label,value])=>`<div class="release-item"><span>${label}</span><strong>${value}</strong></div>`).join("");$("version-code").value=r.version_code||"";$("version-name").value=r.version_name||"";$("download-url").value=r.download_url||"";$("changelog").value=r.changelog||"";$("force-update").checked=!!r.force;}
+function renderSystem(){const o=state.overview||{},items={"服务进程":true,"计费扣费":o.configuration?.billing_enforcement,"极光推送":o.configuration?.jpush,"异步回复":o.configuration?.chat_reply,"主动消息":o.configuration?.proactive,"健康同步":o.configuration?.health_sync,...Object.fromEntries(Object.entries(o.schedulers||{}).map(([key,value])=>["调度 "+key,value]))};$("system-status").innerHTML=Object.entries(items).map(([label,value])=>`<div class="status-tile"><span>${esc(label)}</span><strong style="color:${value?"var(--green)":"var(--amber)"}">${value?"正常 / 已启用":"停止 / 未启用"}</strong></div>`).join("");$("log-status").innerHTML=Object.entries(o.logs||{}).map(([label,value])=>`<div class="status-tile"><span>${esc(label)}</span><strong>${value.exists?bytes(value.size):"不存在"}</strong><small>${time(value.updated_at)}</small></div>`).join("");const pricing=state.pricing||{};$("pricing-note").textContent=`${pricing.unit||""}；${pricing.peak_hours||""}`;$("pricing-body").innerHTML=Object.entries(pricing.pricing||{}).map(([model,row])=>`<tr><td class="mono">${esc(model)}</td><td class="num">${row.cache_hit.peak} / ${row.cache_hit.offpeak}</td><td class="num">${row.cache_miss.peak} / ${row.cache_miss.offpeak}</td><td class="num">${row.output.peak} / ${row.output.offpeak}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">暂无费率</td></tr>';}
+function switchPage(page){state.page=page;document.querySelectorAll(".nav-button").forEach(button=>button.classList.toggle("active",button.dataset.page===page));document.querySelectorAll(".page").forEach(section=>section.classList.toggle("active",section.id===`page-${page}`));[$("page-title").textContent,$("page-subtitle").textContent]=pageMeta[page];window.scrollTo({top:0,behavior:"smooth"});}
+document.querySelectorAll(".nav-button").forEach(button=>button.onclick=()=>switchPage(button.dataset.page));document.querySelectorAll(".segment").forEach(button=>button.onclick=()=>{state.callView=button.dataset.callView;document.querySelectorAll(".segment").forEach(item=>item.classList.toggle("active",item===button));$("turns-view").hidden=state.callView!=="turns";$("requests-view").hidden=state.callView!=="requests";loadCalls(true);});
+$("days").onchange=()=>{state.days=Number($("days").value);state.turnOffset=state.usageOffset=0;refreshAll();};$("user-select").onchange=()=>{state.userId=$("user-select").value;state.turnOffset=state.usageOffset=0;refreshAll();};$("refresh").onclick=refreshAll;
+let filterTimer;["call-query","call-model","call-kind","call-status","call-tool","call-speed"].forEach(id=>$(id).addEventListener(id==="call-query"?"input":"change",()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>loadCalls(true),id==="call-query"?300:0);}));$("clear-filters").onclick=()=>{["call-query","call-model","call-kind","call-status","call-tool","call-speed"].forEach(id=>$(id).value="");loadCalls(true);};
+$("upload-apk").onclick=async()=>{const file=$("apk-file").files[0];if(!file)return toast("请先选择 APK",true);if(!file.name.toLowerCase().endsWith(".apk"))return toast("只能上传 .apk 文件",true);if(!confirm(`确认上传候选包 ${file.name}（${bytes(file.size)}）？\n上传不会自动推送。`))return;const button=$("upload-apk");button.disabled=true;try{state.release=await apiFetch("/admin/api/update/apk",{method:"POST",headers:{"Content-Type":"application/vnd.android.package-archive"},body:file});renderRelease();toast("APK 上传成功，尚未发送更新推送");}catch(error){toast(error.message,true);}finally{button.disabled=false;}};
+$("save-release").onclick=async()=>{const payload={version_code:Number($("version-code").value),version_name:$("version-name").value.trim(),force:$("force-update").checked,changelog:$("changelog").value.trim(),download_url:$("download-url").value.trim()||null};if(!payload.version_code||!payload.version_name)return toast("请填写有效版本号",true);if(!confirm(`确认保存 ${payload.version_name}（code ${payload.version_code}）的生产版本元数据？`))return;try{state.release=await apiFetch("/admin/api/update",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});renderRelease();toast("版本元数据已保存");}catch(error){toast(error.message,true);}};
+$("push-release").onclick=async()=>{const version=$("version-name").value.trim();if(!confirm(`确认向所有已登记设备发送 ${version||"当前版本"} 的更新检查？`))return;try{const result=await apiFetch("/admin/api/update/push",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({version_name:version,message:"发现新版本，请更新 Auri"})});toast(`推送请求完成：${number(result.tokens)} 个设备`);}catch(error){toast(error.message,true);}};
+$("logout").onclick=async()=>{await fetch("/admin/logout",{method:"POST"});location.href="/admin/login";};refreshAll();setInterval(()=>{if(document.visibilityState==="visible"&&!state.busy)refreshAll();},60000);
 </script>
 </body>
 </html>

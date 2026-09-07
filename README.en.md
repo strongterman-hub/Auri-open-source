@@ -18,6 +18,7 @@ This repository contains the complete application source for both sides: chat, m
 - **Tools:** calendar, search, web pages, weather, location, calculations, conversions, dates, reminders and todos.
 - **Attachments:** images and common document formats; actual model and parser support is required.
 - **Accounts and operations:** email verification, password reset, token hashing, account deletion, usage logs, Credits ledger and payment callback validation.
+- **Operations center:** responsive overview, full account/Credits view, paginated usage and tool-call filters, release controls, runtime status and pricing reference behind a separate admin session.
 - **Android channels:** store builds without self-install updates; direct builds with versioned APK download and integrity checks.
 
 ## Quick start

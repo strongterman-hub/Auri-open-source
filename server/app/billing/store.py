@@ -341,6 +341,36 @@ class BillingStore:
                 (now, order_id),
             )
 
+    def list_account_summaries(self) -> list[dict[str, Any]]:
+        """Return read-only account and order totals without creating ledger rows."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    account.user_id,
+                    account.balance_micros,
+                    account.updated_at,
+                    COUNT(orders.order_id) AS orders,
+                    SUM(CASE WHEN orders.status = 'paid' THEN 1 ELSE 0 END) AS paid_orders,
+                    SUM(CASE WHEN orders.status = 'paid' THEN orders.amount_yuan ELSE 0 END) AS paid_yuan
+                FROM credit_accounts AS account
+                LEFT JOIN payment_orders AS orders ON orders.user_id = account.user_id
+                GROUP BY account.user_id, account.balance_micros, account.updated_at
+                ORDER BY account.updated_at DESC, account.user_id
+                """
+            ).fetchall()
+        return [
+            {
+                "user_id": row["user_id"],
+                "balance_credits": round(int(row["balance_micros"]) / CREDIT_MICROS, 6),
+                "updated_at": row["updated_at"],
+                "orders": int(row["orders"] or 0),
+                "paid_orders": int(row["paid_orders"] or 0),
+                "paid_yuan": int(row["paid_yuan"] or 0),
+            }
+            for row in rows
+        ]
+
     def delete_user(self, user_id: str) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM credit_ledger WHERE user_id = ?", (user_id,))

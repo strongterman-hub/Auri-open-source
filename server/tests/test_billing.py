@@ -64,6 +64,28 @@ def _sign_notification(client: AlipayClient, private_key, params: dict[str, str]
     return base64.b64encode(signature).decode("ascii")
 
 
+def test_list_account_summaries_is_read_only(tmp_dir: Path) -> None:
+    store = BillingStore(tmp_dir / "billing.db", welcome_credits=500)
+    assert store.list_account_summaries() == []
+
+    store.grant_credits("owner@example.com", 950, reference="admin:test")
+    before = store.balance_micros("owner@example.com")
+    summaries = store.list_account_summaries()
+    after = store.balance_micros("owner@example.com")
+
+    assert before == after
+    assert summaries == [
+        {
+            "user_id": "owner@example.com",
+            "balance_credits": 1450.0,
+            "updated_at": summaries[0]["updated_at"],
+            "orders": 0,
+            "paid_orders": 0,
+            "paid_yuan": 0,
+        }
+    ]
+
+
 def test_request_signature_includes_sign_type() -> None:
     client, _alipay_private_key = _alipay_client()
     params = {"app_id": "2021000000000000", "sign_type": "RSA2"}

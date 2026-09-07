@@ -5,8 +5,29 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.core.pricing import normalize_model, usage_cost
+
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _matches_query(values: list[Any], query: str | None) -> bool:
+    needle = (query or "").strip().casefold()
+    if not needle:
+        return True
+    return any(needle in str(value or "").casefold() for value in values)
 
 
 def read_usage_log(path: Path | None) -> list[dict[str, Any]]:
@@ -57,6 +78,12 @@ def build_turns_report(
     days: int = 30,
     limit: int = 100,
     user_id: str | None = None,
+    offset: int = 0,
+    model: str | None = None,
+    status: str | None = None,
+    tool: str | None = None,
+    query: str | None = None,
+    min_duration_ms: int | None = None,
 ) -> dict[str, Any]:
     """Read the turn log and return recent turns plus tool-call/error aggregates."""
     now = datetime.now(timezone.utc)
@@ -65,21 +92,17 @@ def build_turns_report(
     turns: list[dict[str, Any]] = []
     for record in read_turn_log(path):
         raw_ts = record.get("started_at")
-        try:
-            dt = datetime.fromisoformat(raw_ts)
-        except (TypeError, ValueError):
+        dt = _parse_timestamp(raw_ts)
+        if dt is None:
             continue
         if dt < cutoff:
             continue
-        if user_id is not None and record.get("user_id") != user_id:
-            continue
-
         tool_calls = record.get("tool_calls") or []
         cached = int(record.get("cached_tokens") or 0)
         uncached = int(record.get("uncached_tokens") or 0)
         completion = int(record.get("completion_tokens") or 0)
-        model = normalize_model(record.get("model"))
-        cost = usage_cost(model, raw_ts, cached, uncached, completion)
+        normalized_model = normalize_model(record.get("model"))
+        cost = usage_cost(normalized_model, raw_ts, cached, uncached, completion)
 
         turns.append(
             {
@@ -87,7 +110,7 @@ def build_turns_report(
                 "duration_ms": record.get("duration_ms"),
                 "session_id": record.get("session_id"),
                 "user_id": record.get("user_id"),
-                "model": model,
+                "model": normalized_model,
                 "llm_calls": int(record.get("llm_calls") or 0),
                 "tool_calls": [
                     {
@@ -110,10 +133,43 @@ def build_turns_report(
 
     turns.sort(key=lambda item: item["started_at"], reverse=True)
 
+    all_models = sorted({turn["model"] for turn in turns if turn["model"]})
+    all_statuses = sorted({turn["status"] for turn in turns if turn["status"]})
+    all_tools = sorted(
+        {
+            call["name"]
+            for turn in turns
+            for call in turn["tool_calls"]
+            if call["name"]
+        }
+    )
+    filtered = [
+        turn
+        for turn in turns
+        if (user_id is None or turn["user_id"] == user_id)
+        and (model is None or turn["model"] == model)
+        and (status is None or turn["status"] == status)
+        and (tool is None or any(call["name"] == tool for call in turn["tool_calls"]))
+        and (
+            min_duration_ms is None
+            or float(turn["duration_ms"] or 0) >= max(0, min_duration_ms)
+        )
+        and _matches_query(
+            [
+                turn["user_id"],
+                turn["session_id"],
+                turn["model"],
+                turn["status"],
+                *[call["name"] for call in turn["tool_calls"]],
+            ],
+            query,
+        )
+    ]
+
     tool_counts: dict[str, int] = defaultdict(int)
     error_count = 0
     total_duration_ms = 0.0
-    for turn in turns:
+    for turn in filtered:
         total_duration_ms += float(turn["duration_ms"] or 0)
         for tool_call in turn["tool_calls"]:
             tool_counts[tool_call["name"] or "unknown"] += 1
@@ -125,16 +181,34 @@ def build_turns_report(
         "days": days,
         "filter_user_id": user_id,
         "totals": {
-            "turns": len(turns),
-            "avg_duration_ms": round(total_duration_ms / len(turns), 2) if turns else 0,
+            "turns": len(filtered),
+            "avg_duration_ms": round(total_duration_ms / len(filtered), 2) if filtered else 0,
             "tool_calls": sum(tool_counts.values()),
             "errors": error_count,
+            "failed_turns": sum(
+                1
+                for turn in filtered
+                if str(turn["status"] or "").casefold() not in {"completed", "success", "ok"}
+            ),
+            "slow_turns": sum(
+                1 for turn in filtered if float(turn["duration_ms"] or 0) >= 10_000
+            ),
         },
         "tool_counts": [
             {"name": name, "count": count}
             for name, count in sorted(tool_counts.items(), key=lambda item: -item[1])
         ],
-        "recent": turns[:limit],
+        "filters": {
+            "models": all_models,
+            "statuses": all_statuses,
+            "tools": all_tools,
+        },
+        "pagination": {
+            "total": len(filtered),
+            "offset": max(0, offset),
+            "limit": max(1, limit),
+        },
+        "recent": filtered[max(0, offset) : max(0, offset) + max(1, limit)],
     }
 
 
@@ -144,6 +218,10 @@ def build_usage_report(
     days: int = 30,
     limit: int = 200,
     user_id: str | None = None,
+    offset: int = 0,
+    model: str | None = None,
+    kind: str | None = None,
+    query: str | None = None,
 ) -> dict[str, Any]:
     """Read the token log and return per-user + filtered aggregates and rows."""
     now = datetime.now(timezone.utc)
@@ -152,22 +230,21 @@ def build_usage_report(
     rows: list[dict[str, Any]] = []
     for record in read_usage_log(path):
         raw_ts = record.get("ts")
-        try:
-            dt = datetime.fromisoformat(raw_ts)
-        except (TypeError, ValueError):
+        dt = _parse_timestamp(raw_ts)
+        if dt is None:
             continue
         if dt < cutoff:
             continue
 
-        model = normalize_model(record.get("model"))
+        normalized_model = normalize_model(record.get("model"))
         cached = int(record.get("cached_tokens") or 0)
         uncached = int(record.get("uncached_tokens") or 0)
         completion = int(record.get("completion_tokens") or 0)
-        cost = usage_cost(model, raw_ts, cached, uncached, completion)
+        cost = usage_cost(normalized_model, raw_ts, cached, uncached, completion)
         rows.append(
             {
                 "ts": raw_ts,
-                "model": model,
+                "model": normalized_model,
                 "raw_model": record.get("model"),
                 "kind": record.get("kind"),
                 "session_id": record.get("session_id"),
@@ -178,7 +255,7 @@ def build_usage_report(
                 "cached_tokens": cached,
                 "uncached_tokens": uncached,
                 "cost": cost,
-                "day": dt.date().isoformat(),
+                "day": dt.astimezone(BEIJING_TZ).date().isoformat(),
             }
         )
 
@@ -194,7 +271,19 @@ def build_usage_report(
         by_user[key]["cached_tokens"] += row["cached_tokens"]
         by_user[key]["uncached_tokens"] += row["uncached_tokens"]
 
-    filtered = rows if user_id is None else [r for r in rows if r["user_id"] == user_id]
+    all_models = sorted({row["model"] for row in rows if row["model"]})
+    all_kinds = sorted({row["kind"] for row in rows if row["kind"]})
+    filtered = [
+        row
+        for row in rows
+        if (user_id is None or row["user_id"] == user_id)
+        and (model is None or row["model"] == model)
+        and (kind is None or row["kind"] == kind)
+        and _matches_query(
+            [row["user_id"], row["session_id"], row["model"], row["kind"]],
+            query,
+        )
+    ]
 
     totals: dict[str, Any] = defaultdict(int)
     by_model: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -271,5 +360,14 @@ def build_usage_report(
             }
             for day, stats in sorted(by_day.items())
         ],
-        "recent": filtered[:limit],
+        "filters": {
+            "models": all_models,
+            "kinds": all_kinds,
+        },
+        "pagination": {
+            "total": len(filtered),
+            "offset": max(0, offset),
+            "limit": max(1, limit),
+        },
+        "recent": filtered[max(0, offset) : max(0, offset) + max(1, limit)],
     }

@@ -118,3 +118,48 @@ def test_build_turns_report_aggregates(tmp_dir: Path) -> None:
         {"name": "read_health_data", "count": 1},
     ]
     assert report["recent"][0]["user_id"] == "alice"
+
+
+def test_build_turns_report_filters_and_paginates(tmp_dir: Path) -> None:
+    path = tmp_dir / "agent_turns.jsonl"
+    records = []
+    for index, (status, tool, duration_ms) in enumerate(
+        [("completed", "memory", 2_000), ("failed", "weather", 12_000), ("failed", "weather", 32_000)]
+    ):
+        records.append(
+            {
+                "turn_id": f"t{index}",
+                "started_at": f"2026-09-07T0{index}:00:00+00:00",
+                "duration_ms": duration_ms,
+                "session_id": f"session-{index}",
+                "user_id": "alice",
+                "model": "deepseek-v4-flash",
+                "llm_calls": 1,
+                "tool_calls": [{"name": tool, "duration_ms": 10, "error": "boom" if status == "failed" else None, "result_chars": 2}],
+                "prompt_tokens": 10,
+                "completion_tokens": 2,
+                "cached_tokens": 4,
+                "uncached_tokens": 6,
+                "status": status,
+                "response_chars": 5,
+            }
+        )
+    path.write_text("\n".join(json.dumps(record) for record in records), encoding="utf-8")
+
+    report = build_turns_report(
+        path,
+        days=30,
+        limit=1,
+        offset=1,
+        status="failed",
+        tool="weather",
+        query="session",
+        min_duration_ms=10_000,
+    )
+
+    assert report["pagination"] == {"total": 2, "offset": 1, "limit": 1}
+    assert report["totals"]["failed_turns"] == 2
+    assert report["totals"]["slow_turns"] == 2
+    assert report["totals"]["errors"] == 2
+    assert report["recent"][0]["duration_ms"] == 12_000
+    assert report["filters"]["tools"] == ["memory", "weather"]

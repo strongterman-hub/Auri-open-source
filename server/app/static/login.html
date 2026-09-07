@@ -3,124 +3,48 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>登录 · Auri 管理后台</title>
+<meta name="robots" content="noindex,nofollow" />
+<link rel="icon" href="/static/site/assets/auri-icon.png" />
+<title>登录 · Auri 运营中心</title>
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #262b36;
-    --text: #e6e8ee;
-    --muted: #8a93a6;
-    --accent: #4c8dff;
-    --red: #e74c3c;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: radial-gradient(1200px 800px at 50% -10%, #1b2330 0%, var(--bg) 60%);
-    color: var(--text);
-    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  }
-  .card {
-    width: 340px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 32px 28px;
-    box-shadow: 0 24px 60px rgba(0,0,0,0.45);
-  }
-  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 26px; }
-  label { display: block; color: var(--muted); font-size: 12px; margin: 14px 0 6px; }
-  input {
-    width: 100%;
-    background: #11141a;
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 11px 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    outline: none;
-  }
-  input:focus { border-color: var(--accent); }
-  button {
-    width: 100%;
-    margin-top: 24px;
-    background: var(--accent);
-    color: #fff;
-    border: 0;
-    padding: 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:disabled { opacity: 0.6; cursor: default; }
-  .error {
-    display: none;
-    margin-top: 14px;
-    color: var(--red);
-    font-size: 13px;
-  }
+  :root { color-scheme:dark; --bg:#090b10; --panel:#131720; --border:#2a3040; --text:#f4f6fb; --muted:#9aa4b8; --primary:#9b7bff; --green:#36d2aa; --red:#ff6f7d; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(900px 560px at 18% 0%,rgba(155,123,255,.20),transparent 62%),radial-gradient(760px 500px at 100% 100%,rgba(54,210,170,.10),transparent 60%),var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .shell { width:min(920px,100%); display:grid; grid-template-columns:1.1fr minmax(320px,.9fr); border:1px solid var(--border); border-radius:26px; overflow:hidden; background:rgba(19,23,32,.9); box-shadow:0 30px 90px rgba(0,0,0,.42); }
+  .intro { padding:54px; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(145deg,rgba(155,123,255,.14),rgba(54,210,170,.03)); border-right:1px solid var(--border); }
+  .brand { display:flex; align-items:center; gap:12px; font-weight:750; }
+  .mark { width:42px; height:42px; border-radius:14px; display:block; object-fit:cover; box-shadow:0 10px 28px rgba(155,123,255,.22); }
+  .intro h1 { margin:60px 0 12px; max-width:430px; font-size:clamp(30px,4vw,46px); line-height:1.08; letter-spacing:-.035em; }
+  .intro p { margin:0; color:var(--muted); font-size:15px; }
+  .intro small { color:#6f7a90; }
+  .form-wrap { padding:54px 46px; display:flex; flex-direction:column; justify-content:center; }
+  h2 { margin:0; font-size:22px; } .sub { margin:5px 0 26px; color:var(--muted); font-size:13px; }
+  label { display:block; color:var(--muted); font-size:12px; margin:14px 0 6px; }
+  input { width:100%; min-height:46px; background:#0d1017; border:1px solid var(--border); color:var(--text); padding:11px 12px; border-radius:11px; font-size:14px; outline:none; }
+  input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(155,123,255,.13); }
+  .password { position:relative; } .password input { padding-right:62px; }
+  .toggle { position:absolute; right:7px; top:7px; min-height:32px; border:0; border-radius:8px; padding:0 9px; background:transparent; color:var(--muted); cursor:pointer; }
+  .submit { width:100%; min-height:46px; margin-top:24px; border:0; border-radius:11px; background:linear-gradient(135deg,var(--primary),#6d4fe0); color:white; font-weight:700; cursor:pointer; }
+  .submit:disabled { opacity:.55; cursor:wait; }
+  .hint,.error { display:none; margin-top:12px; font-size:12px; } .hint { color:#ffd99a; } .error { color:#ffc2c8; padding:10px 12px; border-radius:10px; background:rgba(255,111,125,.09); border:1px solid rgba(255,111,125,.22); }
+  @media (max-width:720px) { .shell { display:block; max-width:430px; } .intro { padding:28px; border-right:0; border-bottom:1px solid var(--border); } .intro h1 { margin:34px 0 9px; font-size:30px; } .intro small { display:none; } .form-wrap { padding:32px 28px 36px; } }
 </style>
 </head>
 <body>
-  <form class="card" id="form" autocomplete="off">
-    <h1>Auri 管理后台</h1>
-    <p class="sub">日志 · Token 消耗 · 费用统计</p>
-
-    <label for="username">账号</label>
-    <input id="username" name="username" type="text" required autofocus />
-
-    <label for="password">密码</label>
-    <input id="password" name="password" type="password" required />
-
-    <button id="submit" type="submit">登 录</button>
-    <div class="error" id="error"></div>
-  </form>
-
+  <main class="shell">
+    <section class="intro"><div><div class="brand"><img class="mark" src="/static/site/assets/auri-icon.png" alt="" width="42" height="42" />Auri</div><h1>把重要的运行状态，放在第一眼。</h1><p>费用、调用、用户、Credits 与版本发布。</p></div><small>运营中心 · 仅限管理员访问</small></section>
+    <form class="form-wrap" id="form">
+      <h2>欢迎回来</h2><p class="sub">登录 Auri 运营中心</p>
+      <label for="username">管理员账号</label><input id="username" name="username" type="text" autocomplete="username" required autofocus />
+      <label for="password">密码</label><div class="password"><input id="password" name="password" type="password" autocomplete="current-password" required /><button class="toggle" id="toggle" type="button" aria-label="显示密码">显示</button></div>
+      <div class="hint" id="caps">Caps Lock 已开启</div><button class="submit" id="submit" type="submit">登录</button><div class="error" id="error" role="alert"></div>
+    </form>
+  </main>
 <script>
-const form = document.getElementById("form");
-const submit = document.getElementById("submit");
-const error = document.getElementById("error");
-
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  error.style.display = "none";
-  submit.disabled = true;
-  submit.textContent = "登录中…";
-  try {
-    const res = await fetch("/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: document.getElementById("username").value,
-        password: document.getElementById("password").value,
-      }),
-    });
-    if (res.ok) {
-      window.location.href = "/admin";
-      return;
-    }
-    let message = "登录失败";
-    try {
-      const data = await res.json();
-      message = data.detail || message;
-    } catch (_) {}
-    error.textContent = message;
-    error.style.display = "block";
-  } catch (_) {
-    error.textContent = "网络错误，请重试";
-    error.style.display = "block";
-  } finally {
-    submit.disabled = false;
-    submit.textContent = "登 录";
-  }
-});
+const form=document.getElementById("form"),submit=document.getElementById("submit"),error=document.getElementById("error"),password=document.getElementById("password"),toggle=document.getElementById("toggle"),caps=document.getElementById("caps");
+toggle.onclick=()=>{const visible=password.type==="text";password.type=visible?"password":"text";toggle.textContent=visible?"显示":"隐藏";toggle.setAttribute("aria-label",visible?"显示密码":"隐藏密码");password.focus();};
+password.addEventListener("keyup",event=>{caps.style.display=event.getModifierState("CapsLock")?"block":"none";});
+form.addEventListener("submit",async event=>{event.preventDefault();error.style.display="none";submit.disabled=true;submit.textContent="正在登录…";try{const response=await fetch("/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:document.getElementById("username").value,password:password.value})});if(response.ok){location.href="/admin";return;}let message="登录失败";try{message=(await response.json()).detail||message;}catch(_){}throw new Error(message);}catch(reason){error.textContent=reason.message==="Failed to fetch"?"网络连接失败，请稍后重试":reason.message;error.style.display="block";}finally{submit.disabled=false;submit.textContent="登录";}});
 </script>
 </body>
 </html>
