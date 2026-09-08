@@ -116,7 +116,13 @@ class ChatReplyService:
                     reply_job_id=job.id,
                 )
                 self.store.finish_planning(job.id, outcome="silent")
-                self._audit(job, "silent", plan.lane, plan.reason)
+                self._audit(
+                    job,
+                    "silent",
+                    plan.lane,
+                    plan.verbosity,
+                    plan.reason,
+                )
                 return
 
             low, high = self.delays.get(plan.lane, self.delays["fast"])
@@ -127,15 +133,33 @@ class ChatReplyService:
                 job.id,
                 outcome="reply",
                 lane=plan.lane,
+                verbosity=plan.verbosity,
                 delay_seconds=delay,
             )
-            self._audit(job, "planned", plan.lane, plan.reason, delay_ms=round(delay * 1000))
+            self._audit(
+                job,
+                "planned",
+                plan.lane,
+                plan.verbosity,
+                plan.reason,
+                delay_ms=round(delay * 1000),
+            )
         except Exception as exc:  # planner failures must become fast replies, never silence
             self.logger.exception("reply planning failed job=%s", job.id)
             self.store.finish_planning(
-                job.id, outcome="reply", lane="fast", delay_seconds=0
+                job.id,
+                outcome="reply",
+                lane="fast",
+                verbosity="short",
+                delay_seconds=0,
             )
-            self._audit(job, "planner_fallback", "fast", type(exc).__name__)
+            self._audit(
+                job,
+                "planner_fallback",
+                "fast",
+                "short",
+                type(exc).__name__,
+            )
 
     async def _reply(self, job: ReplyJob) -> None:
         async def emit_location_request(request_id: str) -> None:
@@ -147,6 +171,7 @@ class ChatReplyService:
                 job.session_id,
                 job.message_ids,
                 reply_job_id=job.id,
+                response_style=job.verbosity or "short",
                 location_requester=requester,
             )
             await self.session_service.settle_messages(
@@ -172,7 +197,13 @@ class ChatReplyService:
                 )
             except Exception:
                 self.logger.exception("reply push failed job=%s", job.id)
-            self._audit(job, "replied", job.lane or "fast", "completed")
+            self._audit(
+                job,
+                "replied",
+                job.lane or "fast",
+                job.verbosity or "short",
+                "completed",
+            )
         except Exception as exc:
             delay = self.retry_seconds * (2 ** max(0, job.attempt_count))
             status = self.store.retry_or_fail(
@@ -182,7 +213,13 @@ class ChatReplyService:
                 delay_seconds=delay,
             )
             self.logger.exception("background reply failed job=%s status=%s", job.id, status)
-            self._audit(job, status, job.lane or "fast", type(exc).__name__)
+            self._audit(
+                job,
+                status,
+                job.lane or "fast",
+                job.verbosity or "short",
+                type(exc).__name__,
+            )
             return
 
         # Post-reply onboarding is best-effort and must never reopen a reply
@@ -203,6 +240,7 @@ class ChatReplyService:
         job: ReplyJob,
         outcome: str,
         lane: str,
+        verbosity: str,
         reason: str,
         *,
         delay_ms: int | None = None,
@@ -216,6 +254,7 @@ class ChatReplyService:
             "user_id": job.user_id,
             "outcome": outcome,
             "lane": lane,
+            "verbosity": verbosity,
             "reason": reason,
             "message_count": len(job.message_ids),
             "delay_ms": delay_ms,

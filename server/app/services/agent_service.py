@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.agent.context_compressor import ContextCompressor
+from app.agent.response_style import infer_response_style
 from app.agent.runner import AgentRunContext, AgentRunner, AgentTurn
 from app.agent.tools import LocationTool, Tool
 from app.config import Settings
@@ -247,6 +248,7 @@ class AgentService:
         message_ids: list[str],
         *,
         reply_job_id: str,
+        response_style: str = "short",
         location_requester: LocationRequester | None = None,
     ) -> tuple[AgentTurn, MemoryScope, Session, dict]:
         """Generate one complete reply for an already-persisted message batch."""
@@ -340,6 +342,7 @@ class AgentService:
             ),
             current_time=self._current_time_text(scope.user_id),
             xiaomi_status_text=self._xiaomi_status_text(scope.user_id),
+            response_style=response_style,
         )
         turn = await self.runner.run(context)
         if not (turn.text or "").strip():
@@ -696,6 +699,11 @@ class AgentService:
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
                 xiaomi_status_text=xiaomi_status_text,
+                response_style=infer_response_style(
+                    content,
+                    has_attachment=bool(images or files),
+                    onboarding=onboarding_mode,
+                ),
             )
             turn = await self.runner.run(context)
 
@@ -762,6 +770,11 @@ class AgentService:
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
                 xiaomi_status_text=xiaomi_status_text,
+                response_style=infer_response_style(
+                    content,
+                    has_attachment=bool(images or files),
+                    onboarding=onboarding_mode,
+                ),
             )
 
             turn: AgentTurn | None = None

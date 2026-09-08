@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.agent.llm import LLMClient, LLMResponse, ToolCall
+from app.agent.response_style import response_style_instruction
 from app.agent.tools import Tool
 from app.core.token_logger import token_context, usage_breakdown
 from app.core.turn_logger import TurnLogger
@@ -21,6 +22,12 @@ SYSTEM_PROMPT_TEMPLATE = (
     "You help the user with whatever they are working on — questions, planning, "
     "work, study, health, and everyday conversation — and you adapt to the topic "
     "they raise rather than steering toward any single one. "
+    "Speak like a real friend in a phone chat, not like a customer-service script, "
+    "report, or encyclopedia. By default, say only what is useful for this moment: "
+    "answer or react directly, do not restate the user's message, do not cover every "
+    "possible angle, and do not add a recap or a generic closing offer. Do not force "
+    "a question at the end of every reply. Expand when the user explicitly asks for "
+    "detail, the task is genuinely complex, or correctness and safety require it. "
     "When you detect a durable fact or user preference, write it to memory "
     "immediately and silently using the memory tool. Do not ask the user for "
     "permission to remember something. Decide yourself; only confirm with the "
@@ -79,6 +86,11 @@ SUMMARY_BLOCK_PREFIX = (
 )
 
 
+RESPONSE_STYLE_BLOCK_PREFIX = (
+    "\n\n[RESPONSE STYLE — THIS TURN]\n"
+)
+
+
 CURRENT_TIME_BLOCK_PREFIX = (
     "\n\n[CURRENT TIME — AUTHORITATIVE]\n"
     "The current date and time is provided below. Treat it as ground truth for "
@@ -114,6 +126,7 @@ class AgentRunContext:
     onboarding_context_text: str | None = None
     current_time: str | None = None
     xiaomi_status_text: str | None = None
+    response_style: str | None = None
 
 
 @dataclass
@@ -158,6 +171,10 @@ def _system_content(context: AgentRunContext) -> str:
             content += "\n\n" + ONBOARDING_ACTION_HINT.format(labels=labels)
     if context.summary:
         content += SUMMARY_BLOCK_PREFIX + context.summary
+    if context.response_style:
+        content += RESPONSE_STYLE_BLOCK_PREFIX + response_style_instruction(
+            context.response_style
+        )
     return content
 
 
@@ -272,6 +289,7 @@ class BasicAgentRunner(AgentRunner):
                 **totals,
                 "status": status,
                 "response_chars": response_chars,
+                "response_style": context.response_style,
             }
         )
 

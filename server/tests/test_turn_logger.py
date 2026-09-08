@@ -56,6 +56,7 @@ def test_runner_logs_turn_with_tool_call_and_timing(tmp_dir: Path) -> None:
         history=[],
         memory_prompt="memory",
         tools=[FakeTool()],
+        response_style="short",
     )
 
     turn = asyncio.run(runner.run(context))
@@ -75,6 +76,7 @@ def test_runner_logs_turn_with_tool_call_and_timing(tmp_dir: Path) -> None:
     assert record["cached_tokens"] == 40
     assert record["uncached_tokens"] == 70
     assert record["response_chars"] == len("final answer")
+    assert record["response_style"] == "short"
 
 
 def test_build_turns_report_aggregates(tmp_dir: Path) -> None:

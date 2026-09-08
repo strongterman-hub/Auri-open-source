@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.llm import LLMClient
+from app.agent.response_style import infer_response_style, normalize_response_style
 from app.core.token_logger import token_context
 
 
@@ -63,6 +64,7 @@ FAST_MARKERS = (
 class ReplyPlan:
     outcome: str = "reply"
     lane: str = "fast"
+    verbosity: str = "short"
     reason: str = "fallback"
 
 
@@ -126,13 +128,18 @@ class ChatReplyPlanner:
             for message in messages
         )
         if any(message.get("onboarding_reply") for message in messages):
-            return ReplyPlan("reply", "fast", "onboarding_reply")
+            return ReplyPlan("reply", "fast", "micro", "onboarding_reply")
         if allow_silent and not has_attachment and normalized in SILENT_EXACT:
-            return ReplyPlan("silent", "fast", "high_confidence_closure")
-        if has_attachment or "?" in text or "？" in text:
-            return ReplyPlan("reply", "fast", "question_or_attachment")
+            return ReplyPlan("silent", "fast", "micro", "high_confidence_closure")
+        verbosity = infer_response_style(text, has_attachment=has_attachment)
+        if has_attachment:
+            return ReplyPlan("reply", "fast", verbosity, "attachment")
+        if "?" in text or "？" in text:
+            return ReplyPlan("reply", "fast", verbosity, "question")
         if any(marker in text for marker in FAST_MARKERS):
-            return ReplyPlan("reply", "fast", "functional_or_safety_marker")
+            return ReplyPlan(
+                "reply", "fast", verbosity, "functional_or_safety_marker"
+            )
         return None
 
     async def plan(
@@ -159,14 +166,21 @@ class ChatReplyPlanner:
             )
         prompt = (
             "You plan Auri's reply rhythm as a believable AI friend. Classify the current "
-            "user-message batch. Return only JSON with outcome, lane, reason. outcome is "
-            "reply or silent. lane is fast, normal, or away. silent is allowed only for a "
+            "user-message batch. Return only JSON with outcome, lane, verbosity, reason. "
+            "outcome is reply or silent. lane is fast, normal, or away. silent is allowed only for a "
             "high-confidence conversational closing or weak acknowledgment with no new "
             "information. Never choose silent for a question, request, task, health/account "
             "need, emotional disclosure, safety concern, image/file needing a response, or "
             "onboarding. Choose fast for functional, urgent, direct-question, or active "
             "back-and-forth messages; normal for ordinary conversation; away only for "
-            "non-urgent casual sharing after a conversational pause. Do not invent facts.\n\n"
+            "non-urgent casual sharing after a conversational pause. verbosity is micro, "
+            "short, normal, or detailed: micro is one brief acknowledgment; short is the "
+            "default for casual chat and simple questions; normal is for a few necessary "
+            "reasons or steps, attachments, or important health/safety information; detailed "
+            "is only for explicit requests for depth or genuinely complex planning, research, "
+            "development, troubleshooting, comparison, or long-form writing. Match a short "
+            "user message with a short reply unless completeness or safety requires more. "
+            "Do not invent facts.\n\n"
             f"allow_silent={str(allow_silent).lower()}\n"
             f"recent_history={json.dumps(recent, ensure_ascii=False)}\n"
             f"current_batch={batch}"
@@ -184,6 +198,13 @@ class ChatReplyPlanner:
             payload = self._parse_json(response.content)
             outcome = str(payload.get("outcome") or "reply").strip().lower()
             lane = str(payload.get("lane") or "fast").strip().lower()
+            verbosity = normalize_response_style(
+                payload.get("verbosity"),
+                fallback=infer_response_style(
+                    batch,
+                    has_attachment="[图片]" in batch or "[文件:" in batch,
+                ),
+            )
             reason = str(payload.get("reason") or "model").strip()[:200]
             if outcome not in {"reply", "silent"}:
                 outcome = "reply"
@@ -191,9 +212,17 @@ class ChatReplyPlanner:
                 outcome = "reply"
             if lane not in {"fast", "normal", "away"}:
                 lane = "fast"
-            return ReplyPlan(outcome, lane, reason)
+            return ReplyPlan(outcome, lane, verbosity, reason)
         except Exception:
-            return ReplyPlan("reply", "fast", "planner_error_fallback")
+            return ReplyPlan(
+                "reply",
+                "fast",
+                infer_response_style(
+                    batch,
+                    has_attachment="[图片]" in batch or "[文件:" in batch,
+                ),
+                "planner_error_fallback",
+            )
 
     @staticmethod
     def _parse_json(content: str) -> dict[str, Any]:

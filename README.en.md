@@ -10,7 +10,7 @@ This repository contains the complete application source for both sides: chat, m
 
 ## Highlights
 
-- **Continuous chat:** persistent history, local Room cache, idempotent sends and asynchronous replies. Message acceptance and reply generation are separate states.
+- **Continuous chat:** persistent history, local Room cache, idempotent sends and asynchronous replies. Message acceptance and reply generation are separate states; each turn also selects a `micro`, `short`, `normal`, or `detailed` response style.
 - **Memory:** durable user notes, structured events, temporal boundaries, correction relationships, gradual decay of ordinary details and rolling conversation summaries.
 - **Proactive contact:** source freshness, do-not-disturb gates, evidence checks, exposure acknowledgments, reply attribution, backoff and recovery probes.
 - **Optional health context:** experimental Xiaomi Health Cloud integration, normalized metrics, workout records, sleep and recovery scores. No medical diagnosis claims.

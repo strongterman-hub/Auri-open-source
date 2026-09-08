@@ -38,6 +38,7 @@ class ReplyJob:
     message_ids: list[str]
     planned: bool
     lane: str | None
+    verbosity: str | None
     first_received_at: datetime
     last_received_at: datetime
     not_before: datetime
@@ -74,6 +75,7 @@ class ChatReplyStore:
                     message_ids TEXT NOT NULL,
                     planned INTEGER NOT NULL DEFAULT 0,
                     lane TEXT,
+                    verbosity TEXT,
                     first_received_at TEXT NOT NULL,
                     last_received_at TEXT NOT NULL,
                     not_before TEXT NOT NULL,
@@ -103,6 +105,16 @@ class ChatReplyStore:
                     ON chat_client_commands(session_id, delivered_at, expires_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(chat_reply_jobs)"
+                ).fetchall()
+            }
+            if "verbosity" not in columns:
+                connection.execute(
+                    "ALTER TABLE chat_reply_jobs ADD COLUMN verbosity TEXT"
+                )
 
     @staticmethod
     def _job(row: sqlite3.Row) -> ReplyJob:
@@ -115,6 +127,7 @@ class ChatReplyStore:
             message_ids=list(json.loads(row["message_ids"] or "[]")),
             planned=bool(row["planned"]),
             lane=row["lane"],
+            verbosity=row["verbosity"],
             first_received_at=_parse(row["first_received_at"]) or _utcnow(),
             last_received_at=_parse(row["last_received_at"]) or _utcnow(),
             not_before=_parse(row["not_before"]) or _utcnow(),
@@ -155,7 +168,7 @@ class ChatReplyStore:
                     UPDATE chat_reply_jobs
                     SET message_ids = ?, planned = 0, status = 'queued',
                         last_received_at = ?, not_before = ?, updated_at = ?,
-                        lease_until = NULL, last_error = NULL
+                        lease_until = NULL, last_error = NULL, verbosity = NULL
                     WHERE id = ?
                     """,
                     (json.dumps(ids), _iso(now), _iso(due), _iso(now), row["id"]),
@@ -248,6 +261,7 @@ class ChatReplyStore:
         *,
         outcome: str,
         lane: str | None = None,
+        verbosity: str | None = None,
         delay_seconds: float = 0.0,
     ) -> None:
         now = _utcnow()
@@ -266,10 +280,16 @@ class ChatReplyStore:
             connection.execute(
                 """
                 UPDATE chat_reply_jobs
-                SET status = 'queued', planned = 1, lane = ?, not_before = ?,
-                    lease_until = NULL, updated_at = ? WHERE id = ?
+                SET status = 'queued', planned = 1, lane = ?, verbosity = ?,
+                    not_before = ?, lease_until = NULL, updated_at = ? WHERE id = ?
                 """,
-                (lane or "fast", _iso(due), _iso(now), job_id),
+                (
+                    lane or "fast",
+                    verbosity or "short",
+                    _iso(due),
+                    _iso(now),
+                    job_id,
+                ),
             )
 
     def complete(self, job_id: str) -> None:
