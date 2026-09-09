@@ -8,6 +8,8 @@ Auri is an independently developed personal agent with a native Kotlin/Jetpack C
 
 This repository contains the complete application source for both sides: chat, memory, proactive scheduling, health integration, authentication, Credits, Alipay integration, administration, website and direct APK updates. Production databases, accounts, credentials, private signing keys and deployment history are not included.
 
+Android 0.3.29 (versionCode 32) fixes server session revocation on logout, persistent privacy choices, and offline message status and retry feedback. A complete offline privacy policy is available in the app, with the official service policy at [the privacy page](https://auri.thinktocode.online/privacy). Self-hosted deployments must adapt the policy to their own operator and providers.
+
 ## Highlights
 
 - **Continuous chat:** persistent history, local Room cache, idempotent sends and asynchronous replies. Message acceptance and reply generation are separate states; each turn also selects a `micro`, `short`, `normal`, or `detailed` response style.

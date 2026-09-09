@@ -88,7 +88,8 @@ class AuriApi(
         val body = buildMessageBody(content, images, files)
             .put("client_message_id", clientMessageId)
             .toString()
-        return request("POST", "/sessions/$sessionId/messages/async", body, token)
+        // This endpoint only accepts/enqueues a message; model generation is polled separately.
+        return request("POST", "/sessions/$sessionId/messages/async", body, token, 30_000)
     }
 
     fun getChatUpdates(
@@ -268,12 +269,13 @@ class AuriApi(
         path: String,
         body: String?,
         token: String? = null,
+        readTimeoutMs: Int = 120_000,
     ): JSONObject {
         val connection = URL(baseUrl + path).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
-            connection.connectTimeout = 60_000
-            connection.readTimeout = 120_000
+            connection.connectTimeout = 15_000
+            connection.readTimeout = readTimeoutMs
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
             if (token != null) {

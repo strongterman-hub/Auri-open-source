@@ -32,9 +32,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setConsent(agreed: Boolean) {
         consentAgreed = agreed
-        if (agreed) {
-            PrivacyConsent.agree(getApplication())
-        }
+        PrivacyConsent.setAgreed(getApplication(), agreed)
     }
 
     fun switchMode(register: Boolean) {

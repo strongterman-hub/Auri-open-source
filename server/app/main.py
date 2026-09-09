@@ -148,3 +148,12 @@ async def debug_page() -> FileResponse:
     if not settings.debug_ui_enabled:
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/privacy", include_in_schema=False)
+async def privacy_page() -> FileResponse:
+    return FileResponse(
+        SITE_DIR / "privacy.html",
+        media_type="text/html",
+        headers=SITE_PAGE_HEADERS,
+    )

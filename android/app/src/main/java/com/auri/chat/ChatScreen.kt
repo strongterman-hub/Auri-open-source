@@ -589,6 +589,14 @@ private fun MessageBubble(
                         }
                     }
                 }
+                if (message.isUser && message.deliveryStatus == "sending") {
+                    Text(
+                        "发送中…",
+                        color = contentColor.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 if (message.isUser && message.deliveryStatus == "failed") {
                     TextButton(onClick = { onRetry(message.id) }) {
                         Text("发送失败，点击重试", color = MaterialTheme.colorScheme.error)

@@ -25,6 +25,12 @@ class NotFoundError(AppError):
     message = "Resource not found."
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = "unauthorized"
+    message = "未登录或登录已过期"
+
+
 class ValidationError(AppError):
     status_code = 422
     code = "validation_error"

@@ -368,7 +368,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val cached = withContext(Dispatchers.IO) { messageDao.getAll() }
             if (cached.isNotEmpty()) {
-                _messages.addAll(cached.map { it.toMessage() })
+                _messages.addAll(cached.map {
+                    val message = it.toMessage()
+                    if (message.isUser && message.deliveryStatus == "sending") {
+                        message.copy(deliveryStatus = "failed", isError = true)
+                    } else message
+                })
             }
             refreshFromServer()
             refreshProactiveEnabled()
@@ -648,6 +653,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         updateMessage(messageId) { it.copy(deliveryStatus = "sending", isError = false) }
         try {
+            if (!hasNetworkConnection(getApplication())) throw OfflineException()
             val sessionId = resolveActiveSessionId()
                 ?: throw IllegalStateException("无法创建会话")
             val result = withContext(Dispatchers.IO) {
@@ -684,7 +690,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { Log.e("AuriApi", "post-send chat poll failed", it) }
         } catch (exception: Exception) {
             Log.e("AuriApi", "message delivery failed", exception)
-            error = exception.message ?: "发送失败，请稍后重试"
+            error = readableNetworkError(exception, "发送失败，请稍后重试")
             updateMessage(messageId) {
                 it.copy(deliveryStatus = "failed", isError = true)
             }

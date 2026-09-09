@@ -32,6 +32,41 @@ def test_health(client) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_logout_revokes_only_current_header_token(client) -> None:
+    auth = client.app.state.container.auth_service
+    user = auth.store.create_user("logout-regression@example.com", "test-pass-123")
+    token = auth.store.create_token(user.id)
+    other = auth.store.create_token(user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/v1/billing/balance", headers=headers).status_code == 200
+    assert client.post("/v1/auth/logout", headers=headers).status_code == 204
+    assert client.get("/v1/billing/balance", headers=headers).status_code == 401
+    assert auth.get_user(token) is None
+    assert auth.get_user(other) is not None
+    assert client.post("/v1/auth/logout", headers=headers).status_code == 401
+    assert client.post("/v1/auth/logout", params={"authorization": f"Bearer {other}"}).status_code == 401
+    assert auth.get_user(other) is not None
+
+
+@pytest.mark.parametrize("value", [None, "Bearer ", "Basic abc", "Bearer invalid-token"])
+def test_logout_bad_credentials_return_401_not_500(client, value) -> None:
+    headers = {} if value is None else {"Authorization": value}
+    response = client.post("/v1/auth/logout", headers=headers)
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_privacy_policy_is_public_and_matches_document(client) -> None:
+    page = client.get("/privacy")
+    document = client.get("/static/site/privacy-policy.json").json()
+    assert page.status_code == 200
+    assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
+    for section in document["sections"]:
+        assert section["title"] in page.text
+    assert "strongterman@gmail.com" in page.text
+    assert 'href="/privacy"' in client.get("/download").text
+
+
 def test_public_root_does_not_expose_debug_console(client) -> None:
     root = client.get("/")
     debug = client.get("/debug")

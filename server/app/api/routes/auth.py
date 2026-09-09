@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Header, Request, status
 
 from app.api.dependencies import ContainerDep, CurrentUserDep
 from app.auth.models import (
@@ -10,7 +10,7 @@ from app.auth.models import (
     PasswordChangeRequest,
     PasswordResetRequest,
 )
-from app.core.errors import AppError
+from app.core.errors import UnauthorizedError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -104,10 +104,15 @@ async def reset_password(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(container: ContainerDep, authorization: str | None = None) -> None:
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    if not token:
-        raise AppError(status_code=401, code="unauthorized", message="缺少登录凭证")
+async def logout(
+    container: ContainerDep, authorization: str | None = Header(default=None)
+) -> None:
+    scheme, _, token = (authorization or "").partition(" ")
+    token = token.strip()
+    if scheme.lower() != "bearer" or not token:
+        raise UnauthorizedError(message="缺少登录凭证")
+    if container.auth_service.get_user(token) is None:
+        raise UnauthorizedError()
     container.auth_service.logout(token)
 
 

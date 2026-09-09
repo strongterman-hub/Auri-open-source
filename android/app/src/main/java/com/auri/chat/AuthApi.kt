@@ -80,7 +80,11 @@ class AuthApi(
             connection.connectTimeout = 30_000
             connection.readTimeout = 30_000
             connection.setRequestProperty("Authorization", "Bearer $token")
-            connection.responseCode
+            val code = connection.responseCode
+            // A session that is already expired/revoked needs no further revocation.
+            if (code !in 200..299 && code != 401) {
+                throw IllegalStateException("未能完成退出登录，请稍后重试")
+            }
         } finally {
             connection.disconnect()
         }

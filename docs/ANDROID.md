@@ -24,7 +24,17 @@ Windows 的发行包命令可用 `gradle.bat`。常见产物：
 - `app/build/outputs/apk/store/release/` 下的 APK（无签名配置时文件名包含 unsigned）
 - `app/build/outputs/bundle/storeRelease/app-store-release.aab`
 
-## 两种渠道
+## 隐私政策与自部署
+
+0.3.29 在登录页和账号中心提供完整、可离线阅读的政策。内容源为 `android/app/src/main/assets/privacy-policy.json`，官网副本通过以下命令生成：
+
+```bash
+python scripts/render_privacy.py --document android/app/src/main/assets/privacy-policy.json --site server/app/static/site
+```
+
+从仓库根目录运行。自部署者必须将运营者、联系邮箱、实际服务商和保存机制改成自身情况，同时更新 `PrivacyConsent.POLICY_VERSION` 与 JSON 版本；旧政策的同意记录不能自动代表新版本同意。官网页面路径为 `/privacy`。默认未配置推送时，社区构建继续跳过 JPush 初始化。
+
+## 渠道差异
 
 | 差异 | store | direct |
 |---|---|---|

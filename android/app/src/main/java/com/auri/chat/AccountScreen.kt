@@ -236,21 +236,6 @@ fun AccountScreen(
     }
 
     if (showPrivacyPolicy) {
-        AlertDialog(
-            onDismissRequest = { showPrivacyPolicy = false },
-            title = { Text("隐私政策") },
-            text = {
-                Text(
-                    "为提供主动消息提醒，Auri 会在你同意后使用极光推送（JPush）服务，" +
-                        "用于在离线时向你发送通知。我们仅收集实现该功能所必需的最小信息，" +
-                        "不会用于其他用途。你可随时在“账号中心”关闭相关权限。",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showPrivacyPolicy = false }) {
-                    Text("我知道了")
-                }
-            },
-        )
+        PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
     }
 }

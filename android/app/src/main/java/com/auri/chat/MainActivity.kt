@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        if (BuildConfig.KEEP_ALIVE_ENABLED) {
+        if (BuildConfig.KEEP_ALIVE_ENABLED && PrivacyConsent.isAgreed(this)) {
             ensureKeepAlive()
         }
         val authStore = AuthStore(applicationContext)
@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
             AuriTheme {
                 val versionState by updateChecker.state.collectAsState()
                 var token by remember { mutableStateOf(authStore.getToken()) }
+                var privacyAgreed by remember { mutableStateOf(PrivacyConsent.isAgreed(applicationContext)) }
+                var loggingOut by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
                 var routeName by rememberSaveable { mutableStateOf(AuriRoute.Chat.name) }
                 var rechargeAmount by rememberSaveable { mutableStateOf(100) }
@@ -85,10 +87,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (token == null) {
+                if (token != null && !privacyAgreed) {
+                    PrivacyPolicyDialog(
+                        onDismiss = { finish() },
+                        onAgree = {
+                            PrivacyConsent.agree(applicationContext)
+                            privacyAgreed = true
+                            if (BuildConfig.KEEP_ALIVE_ENABLED) ensureKeepAlive()
+                        },
+                    )
+                } else if (token == null) {
                     AccountScreen(
                         onLoggedIn = {
                             token = authStore.getToken()
+                            privacyAgreed = PrivacyConsent.isAgreed(applicationContext)
+                            if (BuildConfig.KEEP_ALIVE_ENABLED && privacyAgreed) ensureKeepAlive()
                             routeName = AuriRoute.Chat.name
                         },
                     )
@@ -125,6 +138,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                         AuriRoute.Account -> AccountCenterScreen(
+                            loggingOut = loggingOut,
                             email = authStore.getEmail().orEmpty(),
                             versionState = versionState,
                             onRefreshVersion = { triggerUpdateCheck(prompt = false) },
@@ -135,24 +149,38 @@ class MainActivity : ComponentActivity() {
                                 routeName = AuriRoute.ChangePassword.name
                             },
                             onLogout = {
-                                scope.launch {
-                                    val currentToken = token
-                                    val currentEmail = authStore.getEmail().orEmpty()
-                                    val registrationId = deviceStore.getRegistrationId()
-                                    withContext(Dispatchers.IO) {
-                                        currentToken?.let { runCatching { AuthApi().logout(it) } }
-                                        if (currentToken != null && registrationId != null) {
-                                            runCatching {
-                                                AuriApi().unregisterDevice(registrationId, currentToken)
+                                if (!loggingOut) {
+                                    loggingOut = true
+                                    scope.launch {
+                                        try {
+                                            val currentToken = token
+                                            val currentEmail = authStore.getEmail().orEmpty()
+                                            val registrationId = deviceStore.getRegistrationId()
+                                            withContext(Dispatchers.IO) {
+                                                if (!hasNetworkConnection(applicationContext)) throw OfflineException()
+                                                if (currentToken != null && registrationId != null) {
+                                                    runCatching {
+                                                        AuriApi().unregisterDevice(registrationId, currentToken)
+                                                    }
+                                                }
+                                                currentToken?.let { AuthApi().logout(it) }
+                                                AuriDatabase.get(applicationContext).chatMessageDao().clearAll()
                                             }
+                                            authStore.clear()
+                                            sessionStore.clearSession(currentEmail)
+                                            token = null
+                                            routeName = AuriRoute.Chat.name
+                                            viewModelStore.clear()
+                                        } catch (exception: Exception) {
+                                            Toast.makeText(
+                                                applicationContext,
+                                                readableNetworkError(exception, "退出失败，请稍后重试"),
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                        } finally {
+                                            loggingOut = false
                                         }
-                                        AuriDatabase.get(applicationContext).chatMessageDao().clearAll()
                                     }
-                                    authStore.clear()
-                                    sessionStore.clearSession(currentEmail)
-                                    token = null
-                                    routeName = AuriRoute.Chat.name
-                                    viewModelStore.clear()
                                 }
                             },
                             onDeleteAccount = {

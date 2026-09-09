@@ -82,6 +82,7 @@ fun AccountCenterScreen(
     versionState: AppVersionState = AppVersionState(),
     onRefreshVersion: () -> Unit = {},
     onCheckUpdate: () -> Unit = {},
+    loggingOut: Boolean = false,
 ) {
     val context = LocalContext.current
     val prefs = remember {
@@ -95,9 +96,14 @@ fun AccountCenterScreen(
     var notificationsGranted by remember { mutableStateOf(areNotificationsGranted(context)) }
     var locationGranted by remember { mutableStateOf(isLocationGranted(context)) }
     var deleteConfirm by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     var creditsBalance by remember { mutableStateOf<String?>(null) }
+
+    if (showPrivacyPolicy) {
+        PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
+    }
 
     LaunchedEffect(Unit) {
         onRefreshVersion()
@@ -363,11 +369,18 @@ fun AccountCenterScreen(
             }
             Spacer(modifier = Modifier.height(24.dp))
             OutlinedButton(
+                onClick = { showPrivacyPolicy = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text("隐私政策与第三方服务") }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
                 onClick = onLogout,
+                enabled = !loggingOut,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
             ) {
-                Text("退出登录")
+                Text(if (loggingOut) "正在退出…" else "退出登录")
             }
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(
