@@ -35,7 +35,7 @@ class AuriKeepAliveService : Service() {
             "后台运行",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "保持 Auri 后台连接，以接收主动消息"
+            description = "保持 Auri 后台连接，以接收消息与提醒"
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -51,7 +51,7 @@ class AuriKeepAliveService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.jpush_notification_icon)
             .setContentTitle("Auri 正在后台运行")
-            .setContentText("保持连接以接收主动消息")
+            .setContentText("保持连接以接收消息与提醒")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent)

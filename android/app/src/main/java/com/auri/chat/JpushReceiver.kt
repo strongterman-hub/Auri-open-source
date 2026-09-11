@@ -11,7 +11,9 @@ import org.json.JSONObject
 class JpushReceiver : JPushMessageReceiver() {
     override fun onRegister(context: Context, registrationId: String) {
         super.onRegister(context, registrationId)
-        DeviceStore(context).saveRegistrationId(registrationId)
+        if (DeviceStore(context).saveRegistrationId(registrationId)) {
+            AuthStore(context).clearRegisteredDeviceRegistration()
+        }
     }
 
     override fun onNotifyMessageOpened(context: Context, message: NotificationMessage) {

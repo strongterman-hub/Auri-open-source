@@ -35,8 +35,24 @@ class AuthStore(context: Context) {
     fun getRegisteredDeviceToken(): String? =
         preferences.getString(KEY_REGISTERED_DEVICE_TOKEN, null)
 
-    fun saveRegisteredDeviceToken(registrationId: String) {
-        preferences.edit().putString(KEY_REGISTERED_DEVICE_TOKEN, registrationId).apply()
+    fun getRegisteredDeviceAt(): Long =
+        preferences.getLong(KEY_REGISTERED_DEVICE_AT, 0L)
+
+    fun saveRegisteredDeviceToken(
+        registrationId: String,
+        registeredAt: Long = System.currentTimeMillis(),
+    ) {
+        preferences.edit()
+            .putString(KEY_REGISTERED_DEVICE_TOKEN, registrationId)
+            .putLong(KEY_REGISTERED_DEVICE_AT, registeredAt)
+            .apply()
+    }
+
+    fun clearRegisteredDeviceRegistration() {
+        preferences.edit()
+            .remove(KEY_REGISTERED_DEVICE_TOKEN)
+            .remove(KEY_REGISTERED_DEVICE_AT)
+            .apply()
     }
 
     fun saveXiaomiStatus(bound: Boolean, lastSyncAt: Long?) {
@@ -56,5 +72,6 @@ class AuthStore(context: Context) {
         private const val KEY_XIAOMI_LAST_SYNC_AT = "xiaomi_last_sync_at"
         private const val KEY_DUAL_SLEEP_SCORE_VISIBLE = "dual_sleep_score_visible"
         private const val KEY_REGISTERED_DEVICE_TOKEN = "registered_device_token"
+        private const val KEY_REGISTERED_DEVICE_AT = "registered_device_at"
     }
 }

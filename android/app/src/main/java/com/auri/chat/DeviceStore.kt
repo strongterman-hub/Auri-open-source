@@ -8,9 +8,11 @@ class DeviceStore(context: Context) {
 
     fun getRegistrationId(): String? = preferences.getString(KEY_REGISTRATION_ID, null)
 
-    fun saveRegistrationId(registrationId: String) {
-        if (registrationId.isBlank()) return
+    fun saveRegistrationId(registrationId: String): Boolean {
+        if (registrationId.isBlank()) return false
+        val changed = getRegistrationId() != registrationId
         preferences.edit().putString(KEY_REGISTRATION_ID, registrationId).apply()
+        return changed
     }
 
     companion object {

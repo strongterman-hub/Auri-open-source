@@ -8,7 +8,7 @@ Auri is an independently developed personal agent with a native Kotlin/Jetpack C
 
 This repository contains the complete application source for both sides: chat, memory, proactive scheduling, health integration, authentication, Credits, Alipay integration, administration, website and direct APK updates. Production databases, accounts, credentials, private signing keys and deployment history are not included.
 
-Android 0.3.29 (versionCode 32) fixes server session revocation on logout, persistent privacy choices, and offline message status and retry feedback. The paired 2026-09-11 backend also reflects DeepSeek V4.1 Flash's time-based pricing. A complete offline privacy policy is available in the app, with the official service policy at [the privacy page](https://auri.thinktocode.online/privacy). Self-hosted deployments must adapt the policy to their own operator and providers.
+Android 0.3.30 (versionCode 33) adds brand-specific background-settings guidance for Xiaomi, OPPO/OnePlus/realme, vivo, Huawei, Honor, Samsung, and Meizu. It also checks the app-wide notification switch, decouples the direct build's background connection from proactive-message preferences, refreshes JPush registration periodically, and upgrades JPush to 6.2.1. This remains JPush's own channel; vendor system channels and their credentials are not included. A complete offline privacy policy is available in the app, with the official service policy at [the privacy page](https://auri.thinktocode.online/privacy). Self-hosted deployments must adapt the policy to their own operator and providers.
 
 ## Highlights
 

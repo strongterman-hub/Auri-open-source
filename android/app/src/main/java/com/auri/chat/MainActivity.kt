@@ -1,10 +1,7 @@
 package com.auri.chat
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -26,7 +23,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import android.graphics.Color
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,9 +41,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        if (BuildConfig.KEEP_ALIVE_ENABLED && PrivacyConsent.isAgreed(this)) {
-            ensureKeepAlive()
-        }
+        ensureKeepAlive()
         val authStore = AuthStore(applicationContext)
         val sessionStore = SessionStore(applicationContext)
         val deviceStore = DeviceStore(applicationContext)
@@ -93,7 +87,7 @@ class MainActivity : ComponentActivity() {
                         onAgree = {
                             PrivacyConsent.agree(applicationContext)
                             privacyAgreed = true
-                            if (BuildConfig.KEEP_ALIVE_ENABLED) ensureKeepAlive()
+                            ensureKeepAlive()
                         },
                     )
                 } else if (token == null) {
@@ -101,7 +95,7 @@ class MainActivity : ComponentActivity() {
                         onLoggedIn = {
                             token = authStore.getToken()
                             privacyAgreed = PrivacyConsent.isAgreed(applicationContext)
-                            if (BuildConfig.KEEP_ALIVE_ENABLED && privacyAgreed) ensureKeepAlive()
+                            ensureKeepAlive()
                             routeName = AuriRoute.Chat.name
                         },
                     )
@@ -167,6 +161,7 @@ class MainActivity : ComponentActivity() {
                                                 AuriDatabase.get(applicationContext).chatMessageDao().clearAll()
                                             }
                                             authStore.clear()
+                                            AuriKeepAliveController.stop(applicationContext)
                                             sessionStore.clearSession(currentEmail)
                                             token = null
                                             routeName = AuriRoute.Chat.name
@@ -190,6 +185,7 @@ class MainActivity : ComponentActivity() {
                                         AuriDatabase.get(applicationContext).chatMessageDao().clearAll()
                                     }
                                     authStore.clear()
+                                    AuriKeepAliveController.stop(applicationContext)
                                     sessionStore.clearSession(currentEmail)
                                     token = null
                                     routeName = AuriRoute.Chat.name
@@ -264,19 +260,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        ensureKeepAlive()
+    }
+
     private fun ensureKeepAlive() {
-        val enabled = getSharedPreferences("auri_settings", MODE_PRIVATE)
-            .getBoolean("proactive_enabled", false)
-        if (!enabled) return
-
-        val hasNotificationPermission = Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasNotificationPermission) {
+        if (!BuildConfig.KEEP_ALIVE_ENABLED) return
+        val shouldRun = PrivacyConsent.isAgreed(this) &&
+            AuthStore(applicationContext).getToken() != null &&
+            areNotificationsGranted(this)
+        if (shouldRun) {
             AuriKeepAliveController.start(this)
+        } else {
+            AuriKeepAliveController.stop(this)
         }
     }
 

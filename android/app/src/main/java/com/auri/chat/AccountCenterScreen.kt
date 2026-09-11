@@ -1,7 +1,6 @@
 package com.auri.chat
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -51,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,10 +62,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,6 +89,7 @@ fun AccountCenterScreen(
     loggingOut: Boolean = false,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember {
         context.getSharedPreferences("auri_settings", Context.MODE_PRIVATE)
     }
@@ -100,6 +105,7 @@ fun AccountCenterScreen(
     var deleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     var creditsBalance by remember { mutableStateOf<String?>(null) }
+    val backgroundSettingsProfile = remember { currentBackgroundSettingsProfile() }
 
     if (showPrivacyPolicy) {
         PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
@@ -111,8 +117,13 @@ fun AccountCenterScreen(
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        notificationsGranted = granted
+    ) {
+        notificationsGranted = areNotificationsGranted(context)
+        if (notificationsGranted) {
+            AuriKeepAliveController.start(context)
+        } else {
+            AuriKeepAliveController.stop(context)
+        }
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -136,6 +147,21 @@ fun AccountCenterScreen(
         creditsBalance = withContext(Dispatchers.IO) {
             runCatching { CreditsApi().balance(token).balanceCredits }.getOrNull()
         }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsGranted = areNotificationsGranted(context)
+                if (notificationsGranted) {
+                    AuriKeepAliveController.start(context)
+                } else {
+                    AuriKeepAliveController.stop(context)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     BackHandler(onBack = onBack)
@@ -275,13 +301,6 @@ fun AccountCenterScreen(
                         onCheckedChange = {
                             proactiveEnabled = it
                             prefs.edit().putBoolean("proactive_enabled", it).apply()
-                            if (
-                                BuildConfig.KEEP_ALIVE_ENABLED &&
-                                it &&
-                                areNotificationsGranted(context)
-                            ) {
-                                AuriKeepAliveController.start(context)
-                            }
                             val token = authStore.getToken()
                             if (token != null) {
                                 scope.launch {
@@ -322,13 +341,13 @@ fun AccountCenterScreen(
                             }
                         },
                     )
-                    if (BuildConfig.KEEP_ALIVE_ENABLED) {
+                    if (BuildConfig.KEEP_ALIVE_ENABLED && backgroundSettingsProfile != null) {
                         PermissionActionRow(
                             icon = Icons.Outlined.Settings,
-                            title = "自启动权限",
-                            subtitle = "用于后台接收主动消息",
+                            title = backgroundSettingsProfile.title,
+                            subtitle = backgroundSettingsProfile.subtitle,
                             onClick = {
-                                context.startActivity(autostartIntent(context))
+                                openBackgroundSettings(context, backgroundSettingsProfile)
                             },
                         )
                     }
@@ -547,12 +566,24 @@ private fun PermissionActionRow(
     }
 }
 
-internal fun areNotificationsGranted(context: Context): Boolean =
-    Build.VERSION.SDK_INT < 33 ||
+internal fun areNotificationsGranted(context: Context): Boolean {
+    val runtimePermissionGranted = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
+    if (!runtimePermissionGranted || !NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return false
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationManagerCompat.from(context)
+            .getNotificationChannel(AURI_MESSAGES_CHANNEL_ID)
+        if (channel != null && channel.importance == android.app.NotificationManager.IMPORTANCE_NONE) {
+            return false
+        }
+    }
+    return true
+}
 
 internal fun isLocationGranted(context: Context): Boolean =
     ContextCompat.checkSelfPermission(
@@ -573,31 +604,3 @@ internal fun openAppDetails(context: Context): Intent =
 internal fun openNotificationSettings(context: Context): Intent =
     Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-
-internal fun autostartIntent(context: Context): Intent {
-    val candidates = listOf(
-        ComponentName(
-            "com.miui.securitycenter",
-            "com.miui.permcenter.autostart.AutoStartManagementActivity",
-        ),
-        ComponentName(
-            "com.huawei.systemmanager",
-            "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
-        ),
-        ComponentName(
-            "com.coloros.safecenter",
-            "com.coloros.safecenter.startupapp.StartupAppListActivity",
-        ),
-        ComponentName(
-            "com.vivo.permissionmanager",
-            "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
-        ),
-    )
-    for (component in candidates) {
-        val intent = Intent().setComponent(component)
-        if (intent.resolveActivity(context.packageManager) != null) {
-            return intent
-        }
-    }
-    return openAppDetails(context)
-}

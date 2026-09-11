@@ -14,4 +14,13 @@ object AuriKeepAliveController {
         )
         ContextCompat.startForegroundService(context, intent)
     }
+
+    fun stop(context: Context) {
+        if (!BuildConfig.KEEP_ALIVE_ENABLED) return
+        val intent = Intent().setClassName(
+            context.packageName,
+            "com.auri.chat.AuriKeepAliveService",
+        )
+        context.stopService(intent)
+    }
 }

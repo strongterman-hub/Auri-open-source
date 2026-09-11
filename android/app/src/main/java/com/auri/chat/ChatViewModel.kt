@@ -343,6 +343,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var nextChatPollMs = CHAT_IDLE_POLL_MS
     @Volatile
     private var isComposing = false
+    @Volatile
+    private var isDeviceRegistrationInFlight = false
 
     private val _messages = mutableStateListOf<ChatMessage>()
     val messages: List<ChatMessage> get() = _messages
@@ -381,6 +383,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { Log.e("AuriApi", "proactive poll failed", it) }
             runCatching { pollChatUpdates() }
                 .onFailure { Log.e("AuriApi", "chat update poll failed", it) }
+            runCatching { ensureDeviceRegistered() }
+                .onFailure { Log.e("AuriApi", "device registration failed", it) }
         }
         viewModelScope.launch {
             while (isActive) {
@@ -880,14 +884,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val registrationId = deviceStore.getRegistrationId()
             ?: JPushInterface.getRegistrationID(getApplication())?.takeIf { it.isNotBlank() }
             ?: return
-        if (authStore.getRegisteredDeviceToken() == registrationId) return
+        val now = System.currentTimeMillis()
+        if (
+            !shouldRefreshDeviceRegistration(
+                registrationId = registrationId,
+                lastRegisteredId = authStore.getRegisteredDeviceToken(),
+                lastRegisteredAt = authStore.getRegisteredDeviceAt(),
+                now = now,
+            ) || isDeviceRegistrationInFlight
+        ) return
 
-        val registered = withContext(Dispatchers.IO) {
-            runCatching { api.registerDevice(registrationId, token) }.isSuccess
-        }
-        if (registered) {
-            deviceStore.saveRegistrationId(registrationId)
-            authStore.saveRegisteredDeviceToken(registrationId)
+        isDeviceRegistrationInFlight = true
+        try {
+            val registered = withContext(Dispatchers.IO) {
+                runCatching { api.registerDevice(registrationId, token) }.isSuccess
+            }
+            if (registered) {
+                deviceStore.saveRegistrationId(registrationId)
+                authStore.saveRegisteredDeviceToken(registrationId, now)
+            }
+        } finally {
+            isDeviceRegistrationInFlight = false
         }
     }
 

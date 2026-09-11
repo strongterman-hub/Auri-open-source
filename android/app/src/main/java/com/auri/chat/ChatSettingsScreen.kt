@@ -221,7 +221,7 @@ fun ChatSettingsScreen(
                                 prefs.edit()
                                     .putString("notification_sound", choice.key)
                                     .apply()
-                                applyPushNotificationSound(context)
+                                applyPushNotificationSound(context, recreateChannel = true)
                                 playSound(context, choice)
                             }
                             .padding(horizontal = 12.dp, vertical = 12.dp),

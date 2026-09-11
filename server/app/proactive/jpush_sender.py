@@ -14,6 +14,8 @@ class JpushSender(PushSender):
     """Sends Android push notifications through JPush."""
 
     endpoint = "https://api.jpush.cn/v3/push"
+    message_channel_id = "auri_messages"
+    time_to_live_seconds = 6 * 60 * 60
 
     def __init__(
         self,
@@ -48,7 +50,11 @@ class JpushSender(PushSender):
                 "android": {
                     "alert": alert,
                     "title": self.title,
+                    "channel_id": self.message_channel_id,
                 },
+            },
+            "options": {
+                "time_to_live": self.time_to_live_seconds,
             },
         }
 

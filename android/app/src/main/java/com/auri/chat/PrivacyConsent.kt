@@ -33,11 +33,13 @@ object PrivacyConsent {
         if (!BuildConfig.JPUSH_ENABLED) return
         JCollectionAuth.setAuth(context, agreed)
         if (agreed) {
+            JPushInterface.setKeepLongConnInBackground(context, true)
             JPushInterface.init(context)
             JPushInterface.resumePush(context)
             applyPushNotificationSound(context)
         } else {
             JPushInterface.stopPush(context)
+            AuriKeepAliveController.stop(context)
         }
     }
 }

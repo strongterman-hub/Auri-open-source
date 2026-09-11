@@ -1,10 +1,14 @@
 package com.auri.chat
 
 import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import cn.jpush.android.api.DefaultPushNotificationBuilder
 import cn.jpush.android.api.JPushInterface
@@ -16,6 +20,7 @@ private const val SOUND_SYSTEM = "system"
 
 const val ACTION_OPEN_CHAT = "com.auri.chat.action.OPEN_CHAT"
 const val ACTION_CHECK_UPDATE = "com.auri.chat.action.CHECK_UPDATE"
+const val AURI_MESSAGES_CHANNEL_ID = "auri_messages"
 
 private data class SoundRef(val key: String, val rawResId: Int?)
 
@@ -38,10 +43,33 @@ fun selectedNotificationSoundUri(context: Context): Uri {
     }
 }
 
-fun applyPushNotificationSound(context: Context) {
+fun applyPushNotificationSound(context: Context, recreateChannel: Boolean = false) {
+    ensureAuriMessagesChannel(context, recreateChannel)
     JPushInterface.setDefaultPushNotificationBuilder(
         AuriSoundPushNotificationBuilder(context, selectedNotificationSoundUri(context)),
     )
+}
+
+private fun ensureAuriMessagesChannel(context: Context, recreate: Boolean) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = context.getSystemService(NotificationManager::class.java)
+    if (recreate) manager.deleteNotificationChannel(AURI_MESSAGES_CHANNEL_ID)
+    if (manager.getNotificationChannel(AURI_MESSAGES_CHANNEL_ID) != null) return
+    val soundUri = selectedNotificationSoundUri(context)
+    val audioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .build()
+    val channel = NotificationChannel(
+        AURI_MESSAGES_CHANNEL_ID,
+        "Auri 消息",
+        NotificationManager.IMPORTANCE_DEFAULT,
+    ).apply {
+        description = "Auri 的聊天回复、主动消息与日程提醒"
+        setSound(soundUri, audioAttributes)
+        enableVibration(true)
+        setShowBadge(true)
+    }
+    manager.createNotificationChannel(channel)
 }
 
 fun openChatIntent(context: Context): Intent =

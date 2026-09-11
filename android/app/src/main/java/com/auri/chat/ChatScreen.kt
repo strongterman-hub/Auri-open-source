@@ -121,20 +121,19 @@ fun ChatScreen(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    val backgroundSettingsProfile = remember { currentBackgroundSettingsProfile() }
     var notificationsGranted by remember { mutableStateOf(areNotificationsGranted(context)) }
     var locationGranted by remember { mutableStateOf(isLocationGranted(context)) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        notificationsGranted = granted
-        if (granted) {
+    ) {
+        notificationsGranted = areNotificationsGranted(context)
+        if (notificationsGranted) {
             viewModel.reportGuideActionCompleted("request_notification")
-            val enabled = context.getSharedPreferences("auri_settings", Context.MODE_PRIVATE)
-                .getBoolean("proactive_enabled", false)
-            if (BuildConfig.KEEP_ALIVE_ENABLED && enabled) {
-                AuriKeepAliveController.start(context)
-            }
+            AuriKeepAliveController.start(context)
+        } else {
+            AuriKeepAliveController.stop(context)
         }
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -154,12 +153,6 @@ fun ChatScreen(
                 } else {
                     viewModel.enableProactive()
                     viewModel.reportGuideActionCompleted("enable_proactive")
-                    if (
-                        BuildConfig.KEEP_ALIVE_ENABLED &&
-                        areNotificationsGranted(context)
-                    ) {
-                        AuriKeepAliveController.start(context)
-                    }
                 }
             }
             "open_health" -> {
@@ -184,7 +177,7 @@ fun ChatScreen(
                 }
             }
             "open_autostart" -> {
-                context.startActivity(autostartIntent(context))
+                backgroundSettingsProfile?.let { openBackgroundSettings(context, it) }
                 viewModel.reportGuideActionCompleted("open_autostart")
             }
         }
@@ -201,6 +194,11 @@ fun ChatScreen(
                     viewModel.refreshProactiveEnabled()
                     notificationsGranted = areNotificationsGranted(context)
                     locationGranted = isLocationGranted(context)
+                    if (notificationsGranted) {
+                        AuriKeepAliveController.start(context)
+                    } else {
+                        AuriKeepAliveController.stop(context)
+                    }
                 }
                 Lifecycle.Event.ON_STOP -> viewModel.setAppInForeground(false)
                 else -> Unit
@@ -214,6 +212,13 @@ fun ChatScreen(
     }
 
     val messages = viewModel.messages
+    val shouldSkipBackgroundSettingsAction = backgroundSettingsProfile == null &&
+        messages.any { message -> message.actions.any { it.type == "open_autostart" } }
+    LaunchedEffect(shouldSkipBackgroundSettingsAction) {
+        if (shouldSkipBackgroundSettingsAction) {
+            viewModel.reportGuideActionCompleted("open_autostart")
+        }
+    }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val displayItems = buildChatDisplayItems(messages)
@@ -395,6 +400,7 @@ fun ChatScreen(
                                 proactiveEnabled = viewModel.proactiveEnabled,
                                 notificationsGranted = notificationsGranted,
                                 locationGranted = locationGranted,
+                                backgroundSettingsProfile = backgroundSettingsProfile,
                                 onRetry = viewModel::retry,
                                 onAction = ::handleChatAction,
                             )
@@ -512,6 +518,7 @@ private fun MessageBubble(
     proactiveEnabled: Boolean,
     notificationsGranted: Boolean,
     locationGranted: Boolean,
+    backgroundSettingsProfile: BackgroundSettingsProfile?,
     onRetry: (String) -> Unit,
     onAction: (ChatAction) -> Unit,
 ) {
@@ -570,15 +577,19 @@ private fun MessageBubble(
                         color = contentColor,
                     )
                 }
-                if (message.actions.isNotEmpty()) {
+                val visibleActions = message.actions.filter {
+                    it.type != "open_autostart" || backgroundSettingsProfile != null
+                }
+                if (visibleActions.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        message.actions.forEach { action ->
+                        visibleActions.forEach { action ->
                             val visual = actionVisual(
                                 action,
                                 proactiveEnabled,
                                 notificationsGranted,
                                 locationGranted,
+                                backgroundSettingsProfile,
                             )
                             ChatActionButton(
                                 label = visual.label,
@@ -618,6 +629,7 @@ private fun actionVisual(
     proactiveEnabled: Boolean,
     notificationsGranted: Boolean,
     locationGranted: Boolean,
+    backgroundSettingsProfile: BackgroundSettingsProfile?,
 ): ActionVisual = when (action.type) {
     "enable_proactive" -> ActionVisual(
         label = if (proactiveEnabled) "已开启主动消息" else action.label,
@@ -633,6 +645,11 @@ private fun actionVisual(
         label = if (locationGranted) "已授权位置" else action.label,
         isOn = locationGranted,
         isToggle = true,
+    )
+    "open_autostart" -> ActionVisual(
+        label = backgroundSettingsProfile?.title ?: action.label,
+        isOn = false,
+        isToggle = false,
     )
     else -> ActionVisual(action.label, false, false)
 }

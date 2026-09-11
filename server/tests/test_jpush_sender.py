@@ -28,6 +28,8 @@ def test_jpush_builds_android_payload() -> None:
     assert payload["audience"]["registration_id"] == ["tok-1", "tok-2"]
     assert payload["notification"]["alert"] == "昨晚睡得有点晚"
     assert payload["notification"]["android"]["title"] == "Auri"
+    assert payload["notification"]["android"]["channel_id"] == "auri_messages"
+    assert payload["options"]["time_to_live"] == 21_600
 
 
 def test_jpush_prefers_push_message_over_chat_message() -> None:
