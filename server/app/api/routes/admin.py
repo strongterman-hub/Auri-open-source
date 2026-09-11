@@ -13,7 +13,11 @@ from pydantic import BaseModel
 
 from app.api.dependencies import ContainerDep
 from app.core.admin_auth import create_session_token, verify_session_token
-from app.core.pricing import PRICING
+from app.core.pricing import (
+    FLASH_PRICE_EFFECTIVE_AT,
+    PRO_FLASH_ROUTE_AT,
+    pricing_for_time,
+)
 from app.services.update_service import AppUpdateService
 from app.services.usage_service import build_turns_report, build_usage_report
 
@@ -184,11 +188,20 @@ async def admin_turns(
 
 @router.get("/admin/api/pricing")
 async def admin_pricing(_: str = Depends(require_admin)) -> dict:
+    now = datetime.now(timezone.utc)
+    pro_routed = now >= PRO_FLASH_ROUTE_AT.astimezone(timezone.utc)
     return {
         "currency": "CNY",
         "unit": "元 / 百万 tokens",
-        "pricing": PRICING,
-        "peak_hours": "北京时间 9:00-12:00、14:00-18:00 为高峰时段，其余为空闲时段（空闲为高峰半价）",
+        "pricing": pricing_for_time(now),
+        "peak_hours": "北京时间周一至周五 9:00-12:00、14:00-18:00 为高峰时段，其余为空闲时段（空闲为高峰半价）",
+        "flash_price_effective_at": FLASH_PRICE_EFFECTIVE_AT.isoformat(),
+        "pro_flash_route_at": PRO_FLASH_ROUTE_AT.isoformat(),
+        "note": (
+            "DeepSeek V4.1 Flash 新价已生效；deepseek-v4-pro 当前也按 Flash 价结算"
+            if pro_routed
+            else "DeepSeek V4.1 Flash 新价已生效；deepseek-v4-pro 将于 09-14 12:00 起按 Flash 价结算"
+        ),
     }
 
 

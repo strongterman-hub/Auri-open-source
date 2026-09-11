@@ -1,5 +1,13 @@
 # 版本与验证记录
 
+## 2026-09-11：DeepSeek V4.1 Flash 计费更新
+
+- 按 DeepSeek 2026-09-10 公告更新 Flash 费率：高峰缓存命中 / 未命中 / 输出为 `0.04 / 2 / 8` 元每百万 tokens，空闲时段为 `0.02 / 1 / 4`；高峰仅限北京时间工作日 `9:00-12:00`、`14:00-18:00`。
+- `deepseek-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 统一按 V4.1 Flash 计价；`deepseek-v4-pro` 在北京时间 2026-09-14 12:00 起自动切换为相同费率。
+- 计价按官方生效时间版本化，后台重算生效前日志时继续使用原 Auri 费率，避免历史费用展示漂移。Credits 兑换与扣费换算规则未变。
+
+公开服务端完整回归 293 项通过，存在一项既有 pytest `asyncio_mode` 配置警告。官方费率来源见 [价格说明](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) 与 [V4.1 Flash 公告](https://api-docs.deepseek.com/zh-cn/news/news260910)。生产账户、账本和历史补差不属于公开源码。
+
 ## 2026-09-09：Android 0.3.29 与账号、网络、隐私修复
 
 - 注销接口从 Authorization 请求头读取 Bearer 凭证并撤销当前令牌；缺失、错误、过期凭证返回 401。其他设备令牌不受影响。客户端等待服务端结果，失败时保留登录状态并提示。

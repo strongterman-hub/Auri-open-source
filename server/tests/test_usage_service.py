@@ -46,6 +46,7 @@ def test_build_usage_report_aggregates_and_costs(tmp_dir: Path) -> None:
     assert report["totals"]["requests"] == 2
     assert report["totals"]["prompt_tokens"] == 2_000_000
     assert report["totals"]["completion_tokens"] == 2_000_000
+    # Historical records keep the pre-2026-09-10 Auri pricing basis:
     # flash peak: 1M hit(0.10) + 1M out(9.0) = 9.10; pro off-peak: 1M miss(4.5) + 1M out(13.5) = 18.0
     assert round(report["totals"]["cost"], 8) == 27.10
     assert len(report["daily"]) == 1

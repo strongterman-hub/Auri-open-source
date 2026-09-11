@@ -139,6 +139,27 @@ def test_usage_is_charged_by_actual_yuan_cost(tmp_dir: Path) -> None:
     assert service.balance_text("u1") == "350.00"
 
 
+def test_usage_after_flash_price_change_uses_new_yuan_cost(tmp_dir: Path) -> None:
+    store = BillingStore(tmp_dir / "billing.db", welcome_credits=500)
+    service = BillingService(store, alipay=None, enforcement_enabled=True)
+
+    service.charge_usage(
+        {
+            "id": "usage-new-flash-price",
+            "user_id": "u1",
+            "model": "deepseek-flash",
+            "kind": "chat",
+            "ts": "2026-09-10T12:00:00+00:00",
+            "cached_tokens": 0,
+            "uncached_tokens": 1_000_000,
+            "completion_tokens": 0,
+        }
+    )
+
+    # 20:00 Beijing is off-peak: ¥1 / 1M miss = 100 Credits.
+    assert service.balance_text("u1") == "400.00"
+
+
 def test_manual_credit_grant_is_positive_and_idempotent(tmp_dir: Path) -> None:
     store = BillingStore(tmp_dir / "billing.db", welcome_credits=500)
 
