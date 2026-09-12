@@ -66,6 +66,12 @@ class ProactivePacingStore:
             self._ensure_column(connection, "pacing", "preference_updated_at", "TEXT")
             self._ensure_column(connection, "pacing", "last_settled_at", "TEXT")
             self._ensure_column(connection, "pacing", "quiet_until", "TEXT")
+            self._ensure_column(
+                connection, "pacing", "continuity_hold_until", "TEXT"
+            )
+            self._ensure_column(
+                connection, "pacing", "last_continuity_error_at", "TEXT"
+            )
             if added_miss_weight:
                 # Preserve the existing control signal without carrying the old
                 # one-message grace hack into the new weighted model.
@@ -198,6 +204,57 @@ class ProactivePacingStore:
                     agent_id,
                 ),
             )
+
+    def record_continuity_error(
+        self,
+        user_id: str,
+        agent_id: str = "default",
+        *,
+        hold_seconds: int,
+        now: datetime | None = None,
+    ) -> None:
+        """Settle a bad-memory interaction without counting it as positive engagement."""
+        current = now or _utcnow()
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        hold_until = current + timedelta(seconds=max(0, hold_seconds))
+        self._ensure_row(user_id, agent_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE pacing
+                SET unreplied_streak = 0, miss_weight = 0,
+                    last_reply_at = ?, last_settled_at = ?,
+                    continuity_hold_until = ?, last_continuity_error_at = ?,
+                    mode = CASE WHEN mode = 'resting' THEN 'recovery' ELSE mode END,
+                    next_probe_at = NULL
+                WHERE user_id = ? AND agent_id = ?
+                """,
+                (
+                    current.isoformat(),
+                    current.isoformat(),
+                    hold_until.isoformat(),
+                    current.isoformat(),
+                    user_id,
+                    agent_id,
+                ),
+            )
+
+    def continuity_hold_active(
+        self,
+        user_id: str,
+        agent_id: str = "default",
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        state = self.get_state(user_id, agent_id)
+        raw = state.get("continuity_hold_until") if state else None
+        if not raw:
+            return False
+        until = datetime.fromisoformat(raw)
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        return (now or _utcnow()) < until
 
     @staticmethod
     def _rest_delay(level: int) -> timedelta:
@@ -414,7 +471,8 @@ class ProactivePacingStore:
                        last_sent_at, last_reply_at, next_daily_due_at,
                        miss_weight, opportunities, mode, rest_level,
                        next_probe_at, initiative_preference,
-                       preference_updated_at, last_settled_at, quiet_until
+                       preference_updated_at, last_settled_at, quiet_until,
+                       continuity_hold_until, last_continuity_error_at
                 FROM pacing
                 WHERE user_id = ? AND agent_id = ?
                 """,
@@ -438,6 +496,8 @@ class ProactivePacingStore:
             "preference_updated_at": row["preference_updated_at"],
             "last_settled_at": row["last_settled_at"],
             "quiet_until": row["quiet_until"],
+            "continuity_hold_until": row["continuity_hold_until"],
+            "last_continuity_error_at": row["last_continuity_error_at"],
         }
 
     def delete_user(self, user_id: str, agent_id: str = "default") -> None:

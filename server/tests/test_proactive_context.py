@@ -412,3 +412,62 @@ def test_audit_logger_redacts_location_and_conversation_values(tmp_dir: Path) ->
     assert "这是私密对话" not in serialized
     assert "不应写入审计的消息正文" not in serialized
     assert "stationary" in serialized
+
+
+def test_conversation_context_keeps_user_exchange_after_assistant_traffic(
+    tmp_dir: Path,
+) -> None:
+    now = datetime.now(timezone.utc)
+    builder, sessions, *_ = _builder(tmp_dir)
+    builder.conversation_tail_messages = 4
+    builder.conversation_user_exchanges = 12
+    builder.conversation_continuity_hours = 72
+    session = asyncio.run(
+        sessions.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    session.messages.extend(
+        [
+            {
+                "id": "game-question",
+                "role": "assistant",
+                "content": "玩的什么游戏？",
+                "timestamp": (now - timedelta(hours=2, minutes=1)).isoformat(),
+            },
+            {
+                "id": "game-answer",
+                "role": "user",
+                "content": "lol",
+                "timestamp": (now - timedelta(hours=2)).isoformat(),
+            },
+        ]
+    )
+    for index in range(15):
+        session.messages.append(
+            {
+                "id": f"assistant-{index}",
+                "role": "assistant",
+                "content": f"主动分享 {index}",
+                "timestamp": (now - timedelta(minutes=15 - index)).isoformat(),
+                "proactive": True,
+            }
+        )
+    session.messages.append(
+        {
+            "id": "continuity-error",
+            "role": "user",
+            "content": "你失忆了？我不是刚说过？",
+            "timestamp": (now - timedelta(minutes=1)).isoformat(),
+        }
+    )
+    asyncio.run(sessions.save(session))
+
+    snapshot = asyncio.run(builder.build(MemoryScope(user_id="u1"), now=now))
+
+    game = snapshot.signal("conversation_exchange_game-answer")
+    correction = snapshot.signal("conversation_exchange_continuity-error")
+    assert game is not None
+    assert game.value["text"] == "lol"
+    assert game.value["reply_to_id"] == "game-question"
+    assert game.value["reply_to_text"] == "玩的什么游戏？"
+    assert correction is not None
+    assert correction.value["continuity_error"] is True

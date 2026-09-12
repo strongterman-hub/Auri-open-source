@@ -195,12 +195,21 @@ class AgentService:
                     user_message["onboarding_reply"] = bool(
                         self.is_onboarding(scope.user_id, scope.agent_id)
                     )
+            conversation_context = [
+                dict(message) for message in session.messages[-4:]
+            ]
             session.messages.append(user_message)
             session.touch()
             await self.session_service.save(session)
 
         asyncio.create_task(
-            self._after_message_accepted(scope, session.id, user_message, proactive_id)
+            self._after_message_accepted(
+                scope,
+                session.id,
+                user_message,
+                proactive_id,
+                conversation_context,
+            )
         )
         return session, user_message, False
 
@@ -210,6 +219,7 @@ class AgentService:
         session_id: str,
         user_message: dict,
         proactive_id: str | None,
+        conversation_context: list[dict] | None = None,
     ) -> None:
         message_text = self._content_text(user_message.get("content", ""))
         if self.proactive_activity_hook is not None:
@@ -238,6 +248,7 @@ class AgentService:
                     scope,
                     session_id,
                     user_message,
+                    conversation_context=conversation_context,
                 )
             except Exception:
                 pass
@@ -401,6 +412,7 @@ class AgentService:
         scope = MemoryScope(user_id=session.user_id, agent_id=session.agent_id)
         await self._attribute_proactive_reply(session, content)
         user_message = _chat_message("user", content)
+        conversation_context = [dict(message) for message in session.messages[-4:]]
         session.messages.append(user_message)
 
         if self.event_memory_service is not None:
@@ -409,6 +421,7 @@ class AgentService:
                     scope,
                     session.id,
                     user_message,
+                    conversation_context=conversation_context,
                 )
             except Exception:
                 # Event extraction is an auxiliary memory path and must never

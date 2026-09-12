@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from app.agent.llm import LLMClient, LLMResponse
+from app.memory.event_extraction import EventExtractor
 from app.memory.events import (
     EventCandidate,
     EventDetailCandidate,
@@ -19,6 +22,19 @@ from app.services.event_memory_service import EventMemoryService
 
 
 UTC = timezone.utc
+
+
+class _CapturingExtractionLLM(LLMClient):
+    def __init__(self, content: str = "[]") -> None:
+        self.content = content
+        self.messages: list[dict] = []
+
+    async def complete(self, messages, tools=None, max_tokens=None):
+        self.messages = list(messages)
+        return LLMResponse(content=self.content)
+
+    async def stream(self, messages, tools=None, max_tokens=None):
+        raise NotImplementedError
 
 
 def _candidate(
@@ -308,6 +324,84 @@ def test_capture_persists_owner_source_and_structured_event_idempotently(
     assert raw[0].payload["text"] == "我刚刚搬进新家了"
     assert len(events) == 1
     assert events[0].source_refs == ["session:s1:message:m1"]
+
+
+def test_event_extractor_receives_reply_context_for_short_answer() -> None:
+    llm = _CapturingExtractionLLM()
+    extractor = EventExtractor(llm)
+
+    result = asyncio.run(
+        extractor.extract(
+            user_id="u1",
+            message_text="已经弄好了",
+            message_at=datetime(2026, 9, 12, 11, 23, tzinfo=UTC),
+            timezone_name="Asia/Shanghai",
+            recent_events=[],
+            conversation_context=[
+                {
+                    "id": "question-1",
+                    "role": "assistant",
+                    "content": "新的小米手环今晚该到了吧？",
+                    "timestamp": "2026-09-12T11:05:53+00:00",
+                }
+            ],
+        )
+    )
+
+    assert result == []
+    prompt = llm.messages[-1]["content"]
+    assert "CONVERSATION_CONTEXT" in prompt
+    assert "question-1" in prompt
+    assert "新的小米手环今晚该到了吧" in prompt
+    assert "USER_MESSAGE:\n已经弄好了" in prompt
+
+
+def test_event_extraction_diagnostics_distinguish_invalid_results() -> None:
+    assert EventExtractor.parse_with_diagnostics("").status == "empty"
+    assert EventExtractor.parse_with_diagnostics("not-json").status == "invalid_json"
+    assert EventExtractor.parse_with_diagnostics('{"event": 1}').status == "invalid_shape"
+    assert EventExtractor.parse_with_diagnostics("[]").status == "no_candidates"
+
+
+def test_event_memory_audit_records_ids_without_message_bodies(tmp_path: Path) -> None:
+    db_path = tmp_path / "memory.db"
+    audit_path = tmp_path / "event_memory.jsonl"
+    service = EventMemoryService(
+        EventMemoryStore(db_path),
+        ObservationStore(db_path),
+        extractor=_FakeExtractor(),
+        audit_path=audit_path,
+    )
+    message = {
+        "id": "answer-1",
+        "role": "user",
+        "content": "已经弄好了",
+        "timestamp": "2026-09-12T11:23:49+00:00",
+    }
+    context = [
+        {
+            "id": "question-1",
+            "role": "assistant",
+            "content": "新的小米手环今晚该到了吧？",
+        }
+    ]
+
+    asyncio.run(
+        service.capture_user_message(
+            MemoryScope(user_id="u1"),
+            "s1",
+            message,
+            conversation_context=context,
+        )
+    )
+
+    raw = audit_path.read_text(encoding="utf-8")
+    record = json.loads(raw)
+    assert record["message_id"] == "answer-1"
+    assert record["context_message_ids"] == ["question-1"]
+    assert record["persisted_count"] == 1
+    assert "已经弄好了" not in raw
+    assert "新的小米手环" not in raw
 
 
 def test_regression_sleep_before_move_is_not_called_first_night_in_new_home(

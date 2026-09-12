@@ -142,6 +142,7 @@ def _build_engine(
     pacing_enabled: bool = False,
     health_store=None,
     trending_service=None,
+    continuity_check_enabled: bool = False,
 ) -> tuple[ProactiveEngine, SessionService, ToldStore, ProactiveStore, PresenceService]:
     settings = Settings(
         data_dir=tmp_dir,
@@ -151,6 +152,7 @@ def _build_engine(
         proactive_quiet_hours=quiet_hours,
         proactive_onboarding_enabled=onboarding_enabled,
         proactive_pacing_enabled=pacing_enabled,
+        proactive_continuity_check_enabled=continuity_check_enabled,
     )
     memory_service = MemoryService(FileMemoryStore(tmp_dir / "mem"))
     observation_service = ObservationService(ObservationStore(tmp_dir / "memory.db"))
@@ -1092,6 +1094,143 @@ def test_grounded_current_activity_claim_can_send(tmp_dir: Path) -> None:
     assert decision.should_message is True
     assert decision.evidence_refs == ["conversation_1"]
     assert decision.context_snapshot_id == snapshot.id
+
+
+def test_continuity_checker_rewrites_answered_memory_question(tmp_dir: Path) -> None:
+    draft = (
+        '{"should_message": true, "category": "memory_recall", '
+        '"topic_key": "wristband_replacement", '
+        '"conversation_intent": "soft_check_in", '
+        '"message": "新手环到了没？"}'
+    )
+    rewrite = (
+        '{"verdict": "rewrite", "reason": "用户已经说安装好了", '
+        '"message": "今晚是新手环正式上岗的第一晚，明早看看数据完整不完整。", '
+        '"push_message": "明早看看新手环第一晚的数据。", '
+        '"conversation_intent": "share", '
+        '"refs": ["conversation_exchange_ring-answer"]}'
+    )
+    engine, session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        draft,
+        cooldown_seconds=0,
+        continuity_check_enabled=True,
+    )
+    engine.llm = SequenceProactiveLLM([draft, rewrite])
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    snapshot = SituationSnapshot(
+        user_id="u1",
+        generated_at=datetime.now(timezone.utc),
+        timezone="Asia/Shanghai",
+        signals=[
+            SituationSignal(
+                id="conversation_exchange_ring-answer",
+                source="conversation",
+                kind="user_exchange",
+                value={
+                    "text": "已经弄好了",
+                    "reply_to_text": "新的小米手环今晚该到了吧？",
+                    "continuity_error": False,
+                },
+                observed_at=datetime.now(timezone.utc),
+                age_seconds=60,
+                freshness=SignalFreshness.fresh,
+            )
+        ],
+    )
+    engine.context_builder = StaticContextBuilder(snapshot)
+
+    decision = asyncio.run(
+        engine.evaluate_daily("u1", "default", TriggerType.time)
+    )
+
+    assert decision is not None and decision.should_message is True
+    assert decision.continuity_status == "rewrite"
+    assert decision.conversation_intent is ConversationIntent.share
+    assert decision.message == "今晚是新手环正式上岗的第一晚，明早看看数据完整不完整。"
+    assert decision.continuity_refs == ["conversation_exchange_ring-answer"]
+
+
+def test_recent_continuity_error_blocks_new_question_without_checker(
+    tmp_dir: Path,
+) -> None:
+    draft = (
+        '{"should_message": true, "category": "explore", '
+        '"topic_key": "current_game", '
+        '"conversation_intent": "direct_question", '
+        '"message": "最近在打什么游戏吗？"}'
+    )
+    engine, session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        draft,
+        cooldown_seconds=0,
+        continuity_check_enabled=True,
+    )
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    snapshot = SituationSnapshot(
+        user_id="u1",
+        generated_at=datetime.now(timezone.utc),
+        timezone="Asia/Shanghai",
+        signals=[
+            SituationSignal(
+                id="conversation_exchange-correction",
+                source="conversation",
+                kind="user_exchange",
+                value={"text": "你失忆了？", "continuity_error": True},
+                observed_at=datetime.now(timezone.utc),
+                age_seconds=60,
+                freshness=SignalFreshness.fresh,
+            )
+        ],
+    )
+    engine.context_builder = StaticContextBuilder(snapshot)
+
+    decision = asyncio.run(
+        engine.evaluate_daily("u1", "default", TriggerType.time)
+    )
+
+    assert decision is not None
+    assert decision.should_message is False
+    assert decision.continuity_status == "blocked_recent_error"
+    assert decision.continuity_refs == ["conversation_exchange-correction"]
+
+
+def test_continuity_error_is_not_counted_as_positive_reply(tmp_dir: Path) -> None:
+    engine, session_service, told_store, store, _presence = _build_engine(
+        tmp_dir,
+        '{"should_message": true, "category": "memory_recall", '
+        '"conversation_intent": "soft_check_in", "message": "新手环到了没？"}',
+        cooldown_seconds=0,
+    )
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    decision = asyncio.run(
+        engine.evaluate_daily("u1", "default", TriggerType.time)
+    )
+    assert decision is not None and decision.should_message is True
+
+    asyncio.run(
+        engine.record_user_activity(
+            "u1",
+            "default",
+            "你失忆了？我不是刚说过？",
+            decision.id,
+        )
+    )
+
+    state = engine.pacing_store.get_state("u1")
+    saved = store.get("u1", "default", decision.id)
+    told = told_store.get(decision.insight_key, "u1")
+    assert state is not None
+    assert state["total_replied"] == 0
+    assert engine.pacing_store.continuity_hold_active("u1") is True
+    assert saved is not None and saved.continuity_status == "user_reported_error"
+    assert told is not None and told.user_feedback is ToldFeedback.unhelpful
 
 
 class FakeSleepHealthStore:

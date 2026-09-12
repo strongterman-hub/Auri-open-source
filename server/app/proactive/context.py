@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -187,6 +188,7 @@ class ProactiveAuditLogger:
             "phase",
             "category",
             "insight_key",
+            "topic_key",
             "context_snapshot_id",
             "situation_confidence",
             "evidence_refs",
@@ -194,6 +196,9 @@ class ProactiveAuditLogger:
             "silence_reason",
             "decided_at",
             "delivery_channel",
+            "continuity_status",
+            "continuity_reason",
+            "continuity_refs",
         }
         decision_payload = {
             key: value
@@ -278,6 +283,9 @@ class ProactiveContextBuilder:
         gps_stale_seconds: int = 7200,
         conversation_fresh_seconds: int = 1800,
         conversation_stale_seconds: int = 21600,
+        conversation_tail_messages: int = 4,
+        conversation_user_exchanges: int = 12,
+        conversation_continuity_hours: int = 72,
         weather_fresh_seconds: int = 1800,
         weather_stale_seconds: int = 7200,
         health_fresh_seconds: int = 1800,
@@ -302,6 +310,9 @@ class ProactiveContextBuilder:
         self.gps_stale_seconds = gps_stale_seconds
         self.conversation_fresh_seconds = conversation_fresh_seconds
         self.conversation_stale_seconds = conversation_stale_seconds
+        self.conversation_tail_messages = max(1, conversation_tail_messages)
+        self.conversation_user_exchanges = max(1, conversation_user_exchanges)
+        self.conversation_continuity_hours = max(1, conversation_continuity_hours)
         self.weather_fresh_seconds = weather_fresh_seconds
         self.weather_stale_seconds = weather_stale_seconds
         self.health_fresh_seconds = health_fresh_seconds
@@ -481,8 +492,14 @@ class ProactiveContextBuilder:
         if not active:
             return []
         session = max(active, key=lambda item: item.updated_at)
+        messages = session.messages
         signals: list[SituationSignal] = []
-        for index, message in enumerate(session.messages[-8:]):
+
+        # Preserve the immediate local exchange, then separately retain recent
+        # user-centred Q&A. The second quota prevents assistant-only proactive
+        # traffic from evicting facts the user supplied a short time ago.
+        tail = messages[-self.conversation_tail_messages :]
+        for index, message in enumerate(tail):
             text = self._message_text(message.get("content"))
             if not text:
                 continue
@@ -504,7 +521,81 @@ class ProactiveContextBuilder:
                     confidence=1.0,
                 )
             )
+
+        by_id = {
+            str(message.get("id")): message
+            for message in messages
+            if message.get("id")
+        }
+        cutoff = now - timedelta(hours=self.conversation_continuity_hours)
+        user_indexes = [
+            index
+            for index, message in enumerate(messages)
+            if message.get("role") == "user"
+            and (_parse_time(message.get("timestamp")) or now) >= cutoff
+        ][-self.conversation_user_exchanges :]
+        for index in user_indexes:
+            message = messages[index]
+            message_id = str(message.get("id") or f"user_{index}")
+            text = self._message_text(message.get("content"))
+            if not text:
+                continue
+            reply_target = None
+            proactive_id = message.get("replying_to_proactive_id")
+            if proactive_id:
+                reply_target = by_id.get(str(proactive_id))
+            if reply_target is None:
+                for previous in reversed(messages[max(0, index - 3) : index]):
+                    if previous.get("role") == "assistant":
+                        reply_target = previous
+                        break
+            reply_text = (
+                self._message_text(reply_target.get("content"))
+                if reply_target is not None
+                else ""
+            )
+            observed = _parse_time(message.get("timestamp"))
+            signals.append(
+                self._signal(
+                    evidence_id=f"conversation_exchange_{message_id}",
+                    source="conversation",
+                    kind="user_exchange",
+                    value={
+                        "role": "user",
+                        "text": text[:1000],
+                        "reply_to_id": (
+                            reply_target.get("id") if reply_target else None
+                        ),
+                        "reply_to_text": reply_text[:1000],
+                        "continuity_error": self._is_continuity_error(text),
+                    },
+                    observed_at=observed,
+                    now=now,
+                    fresh_seconds=self.conversation_fresh_seconds,
+                    stale_seconds=max(
+                        self.conversation_stale_seconds,
+                        self.conversation_continuity_hours * 3600,
+                    ),
+                    confidence=1.0,
+                )
+            )
         return signals
+
+    @staticmethod
+    def _is_continuity_error(text: str) -> bool:
+        compact = re.sub(r"\s+", "", text or "")
+        return any(
+            marker in compact
+            for marker in (
+                "你失忆了",
+                "刚说过",
+                "不是刚说过",
+                "已经告诉你",
+                "不是告诉你",
+                "怎么又问",
+                "又问一遍",
+            )
+        )
 
     @staticmethod
     def _message_text(content: Any) -> str:

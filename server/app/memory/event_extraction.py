@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from app.agent.llm import LLMClient
 from app.core.token_logger import token_context
@@ -17,6 +19,11 @@ Rules:
 - Treat only facts asserted by the USER as owner facts. Never turn assistant guesses into facts.
 - Resolve relative time from MESSAGE_TIME in USER_TIMEZONE, never from processing time.
 - Reuse an existing event_key/thread_key when the message updates the same event.
+- CONVERSATION_CONTEXT is supplied only to resolve what the current user message
+  answers or refers to. It is not owner evidence by itself. Only facts asserted
+  or confirmed by the current USER_MESSAGE may create or update owner facts.
+- Short replies such as "already done", "no difference", or a bare product/game
+  name should update the event discussed by the immediately preceding question.
 - status must be planned, in_progress, completed, or cancelled.
 - planned events must not be represented as completed.
 - occurred_start/occurred_end must be ISO-8601 timestamps with an offset when known, else null.
@@ -57,6 +64,12 @@ Each array item has this shape:
 """
 
 
+@dataclass(frozen=True)
+class EventExtractionOutcome:
+    candidates: list[EventCandidate]
+    status: str
+
+
 class EventExtractor:
     """LLM-backed extractor constrained to one timestamped owner message."""
 
@@ -72,7 +85,28 @@ class EventExtractor:
         message_at: datetime,
         timezone_name: str,
         recent_events: list[EventRecord],
+        conversation_context: list[dict[str, Any]] | None = None,
     ) -> list[EventCandidate]:
+        outcome = await self.extract_with_diagnostics(
+            user_id=user_id,
+            message_text=message_text,
+            message_at=message_at,
+            timezone_name=timezone_name,
+            recent_events=recent_events,
+            conversation_context=conversation_context,
+        )
+        return outcome.candidates
+
+    async def extract_with_diagnostics(
+        self,
+        *,
+        user_id: str,
+        message_text: str,
+        message_at: datetime,
+        timezone_name: str,
+        recent_events: list[EventRecord],
+        conversation_context: list[dict[str, Any]] | None = None,
+    ) -> EventExtractionOutcome:
         recent = [
             {
                 "event_key": event.event_key,
@@ -89,6 +123,24 @@ class EventExtractor:
             }
             for event in recent_events[:20]
         ]
+        context = []
+        for message in (conversation_context or [])[-4:]:
+            role = str(message.get("role") or "unknown")
+            content = message.get("content")
+            if isinstance(content, list):
+                content = "\n".join(
+                    str(part.get("text") or "")
+                    for part in content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                )
+            context.append(
+                {
+                    "id": message.get("id"),
+                    "role": role,
+                    "timestamp": message.get("timestamp"),
+                    "text": str(content or "")[:1000],
+                }
+            )
         messages = [
             {"role": "system", "content": EVENT_EXTRACTION_SYSTEM_PROMPT},
             {
@@ -97,6 +149,7 @@ class EventExtractor:
                     f"MESSAGE_TIME: {message_at.isoformat()}\n"
                     f"USER_TIMEZONE: {timezone_name}\n"
                     f"RECENT_EVENTS: {json.dumps(recent, ensure_ascii=False)}\n\n"
+                    f"CONVERSATION_CONTEXT: {json.dumps(context, ensure_ascii=False)}\n\n"
                     f"USER_MESSAGE:\n{message_text}"
                 ),
             },
@@ -109,26 +162,30 @@ class EventExtractor:
                     max_tokens=self.max_tokens,
                 )
         except Exception:
-            return []
-        return self.parse(response.content)
+            return EventExtractionOutcome([], "extractor_error")
+        return self.parse_with_diagnostics(response.content)
 
     @staticmethod
     def parse(content: str) -> list[EventCandidate]:
+        return EventExtractor.parse_with_diagnostics(content).candidates
+
+    @staticmethod
+    def parse_with_diagnostics(content: str) -> EventExtractionOutcome:
         text = (content or "").strip()
         if not text:
-            return []
+            return EventExtractionOutcome([], "empty")
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:
             match = re.search(r"\[.*\]", text, re.DOTALL)
             if not match:
-                return []
+                return EventExtractionOutcome([], "invalid_json")
             try:
                 payload = json.loads(match.group(0))
             except json.JSONDecodeError:
-                return []
+                return EventExtractionOutcome([], "invalid_json")
         if not isinstance(payload, list):
-            return []
+            return EventExtractionOutcome([], "invalid_shape")
         candidates: list[EventCandidate] = []
         for item in payload:
             if not isinstance(item, dict):
@@ -137,4 +194,9 @@ class EventExtractor:
                 candidates.append(EventCandidate.model_validate(item))
             except Exception:
                 continue
-        return candidates
+        if candidates:
+            return EventExtractionOutcome(candidates, "ok")
+        return EventExtractionOutcome(
+            [],
+            "no_candidates" if not payload else "validation_empty",
+        )

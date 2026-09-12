@@ -65,9 +65,26 @@ class ProactiveStore:
                     decision_reason TEXT,
                     silence_reason TEXT,
                     insight_key TEXT,
+                    topic_key TEXT,
+                    continuity_status TEXT,
+                    continuity_reason TEXT,
+                    continuity_refs_json TEXT NOT NULL DEFAULT '[]',
                     actions_json TEXT NOT NULL DEFAULT '[]'
                 )
                 """
+            )
+            self._ensure_column(connection, "proactive_decisions", "topic_key", "TEXT")
+            self._ensure_column(
+                connection, "proactive_decisions", "continuity_status", "TEXT"
+            )
+            self._ensure_column(
+                connection, "proactive_decisions", "continuity_reason", "TEXT"
+            )
+            self._ensure_column(
+                connection,
+                "proactive_decisions",
+                "continuity_refs_json",
+                "TEXT NOT NULL DEFAULT '[]'",
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_proactive_user_time "
@@ -77,6 +94,19 @@ class ProactiveStore:
                 "CREATE INDEX IF NOT EXISTS idx_proactive_unsettled "
                 "ON proactive_decisions(user_id, agent_id, settled_at, decided_at DESC)"
             )
+
+    @staticmethod
+    def _ensure_column(
+        connection: sqlite3.Connection,
+        table: str,
+        column: str,
+        ddl: str,
+    ) -> None:
+        columns = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        if column not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     @staticmethod
     def _value(value: Any) -> Any:
@@ -95,9 +125,10 @@ class ProactiveStore:
                 delivery_channel, chat_persisted_at, push_status, push_attempted_at,
                 acknowledged, exposed_at, engagement_state, replied, replied_at,
                 settled_at, context_snapshot_id, decision_reason, silence_reason,
-                insight_key, actions_json
+                insight_key, topic_key, continuity_status, continuity_reason,
+                continuity_refs_json, actions_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                      ?, ?, ?, ?, ?, ?)
+                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 session_id = excluded.session_id,
                 delivery_channel = excluded.delivery_channel,
@@ -110,6 +141,10 @@ class ProactiveStore:
                 replied = excluded.replied,
                 replied_at = excluded.replied_at,
                 settled_at = excluded.settled_at,
+                topic_key = excluded.topic_key,
+                continuity_status = excluded.continuity_status,
+                continuity_reason = excluded.continuity_reason,
+                continuity_refs_json = excluded.continuity_refs_json,
                 actions_json = excluded.actions_json
             """,
             (
@@ -138,6 +173,10 @@ class ProactiveStore:
                 decision.decision_reason,
                 decision.silence_reason,
                 decision.insight_key,
+                decision.topic_key,
+                decision.continuity_status,
+                decision.continuity_reason,
+                json.dumps(decision.continuity_refs, ensure_ascii=False),
                 json.dumps(decision.actions, ensure_ascii=False),
             ),
         )
@@ -169,6 +208,7 @@ class ProactiveStore:
             phase=row["phase"],
             category=row["category"],
             insight_key=row["insight_key"],
+            topic_key=row["topic_key"],
             message=message,
             push_message=push_message,
             context_snapshot_id=row["context_snapshot_id"],
@@ -176,6 +216,9 @@ class ProactiveStore:
             silence_reason=row["silence_reason"],
             evidence_refs=evidence_refs,
             tool_calls=tool_calls,
+            continuity_status=row["continuity_status"],
+            continuity_reason=row["continuity_reason"],
+            continuity_refs=json.loads(row["continuity_refs_json"] or "[]"),
             actions=json.loads(row["actions_json"] or "[]"),
             decided_at=self._parse_datetime(row["decided_at"]),
             conversation_intent=row["conversation_intent"],

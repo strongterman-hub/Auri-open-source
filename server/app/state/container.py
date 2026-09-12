@@ -344,6 +344,7 @@ def create_container(settings: Settings) -> Container:
         normal_half_life_days=settings.event_detail_normal_half_life_days,
         high_half_life_days=settings.event_detail_high_half_life_days,
         current_state_ttl_hours=settings.event_current_state_ttl_hours,
+        audit_path=settings.data_dir / "logs" / "event_memory.jsonl",
     )
     session_service = SessionService(session_store)
     chat_reply_store = ChatReplyStore(settings.data_dir / "chat" / "replies.db")
@@ -374,6 +375,11 @@ def create_container(settings: Settings) -> Container:
         ),
         conversation_stale_seconds=(
             settings.proactive_context_conversation_stale_seconds
+        ),
+        conversation_tail_messages=settings.proactive_context_tail_messages,
+        conversation_user_exchanges=settings.proactive_context_user_exchanges,
+        conversation_continuity_hours=(
+            settings.proactive_context_continuity_hours
         ),
         weather_fresh_seconds=settings.proactive_context_weather_fresh_seconds,
         weather_stale_seconds=settings.proactive_context_weather_stale_seconds,

@@ -168,11 +168,22 @@ class Settings(BaseSettings):
     proactive_context_gps_stale_seconds: int = 7200
     proactive_context_conversation_fresh_seconds: int = 1800
     proactive_context_conversation_stale_seconds: int = 21600
+    # Keep user-centred recent exchanges independently from the raw message
+    # tail so Auri's own proactive messages cannot crowd out a fact the user
+    # supplied a short time ago.
+    proactive_context_tail_messages: int = 4
+    proactive_context_user_exchanges: int = 12
+    proactive_context_continuity_hours: int = 72
     proactive_context_weather_fresh_seconds: int = 1800
     proactive_context_weather_stale_seconds: int = 7200
     proactive_context_health_fresh_seconds: int = 1800
     proactive_context_health_stale_seconds: int = 21600
     proactive_context_min_grounding_confidence: float = 0.5
+    # High-risk proactive drafts (questions, memory callbacks and exploratory
+    # prompts) receive a bounded semantic continuity check before delivery.
+    proactive_continuity_check_enabled: bool = True
+    proactive_continuity_check_max_tokens: int = 2048
+    proactive_continuity_hold_seconds: int = 7200
     # A per-user daily budget is intentionally not a gate in the current phase.
     # The value is kept for compatibility and defaults to an effectively
     # unlimited count if a budget is ever re-enabled.

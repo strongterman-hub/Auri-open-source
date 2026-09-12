@@ -69,6 +69,7 @@ class ProactiveDecision(BaseModel):
     phase: ProactivePhase = ProactivePhase.daily
     category: ProactiveCategory | None = None
     insight_key: str | None = None
+    topic_key: str | None = None
     message: str | None = None
     push_message: str | None = None
     importance: int | None = Field(default=None, ge=1, le=10)
@@ -79,6 +80,9 @@ class ProactiveDecision(BaseModel):
     decision_reason: str | None = None
     silence_reason: str | None = None
     tool_calls: list[dict] = Field(default_factory=list)
+    continuity_status: str | None = None
+    continuity_reason: str | None = None
+    continuity_refs: list[str] = Field(default_factory=list)
     actions: list[dict] = Field(default_factory=list)
     decided_at: datetime = Field(default_factory=_utcnow)
     conversation_intent: ConversationIntent = ConversationIntent.share

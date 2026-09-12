@@ -69,16 +69,35 @@ PROACTIVE_SYSTEM_PROMPT = (
     "situation_summary, situation_confidence (0..1), evidence_refs (signal ids), "
     "should_message (boolean), decision_reason, silence_reason, category, message, "
     "conversation_intent (share, soft_check_in, or direct_question), and optional "
-    "push_message. If should_message is false, message must be empty. "
+    "push_message and topic_key. topic_key is a short stable snake_case name for "
+    "the subject of the message. If should_message is false, message must be empty. "
     "Every concrete claim about the user's present situation must cite one or more "
     "fresh evidence_refs. A planned event is not completed, and an expired current "
     "state is not the user's present situation. Do not invent a shared location or "
-    "a causal link between events; when chronology is uncertain, avoid the claim."
+    "a causal link between events; when chronology is uncertain, avoid the claim. "
+    "Before asking anything, inspect every supplied user_exchange and durable/event "
+    "memory item. If the user already answered it, continue from that answer or stay "
+    "silent instead of asking from zero. A topic discussed recently is not explore."
     " Keep the user-facing message restrained like one phone-chat message: express "
     "only one observation, thought, or question, normally in one or two short "
     "sentences and within about 80 Chinese characters. Do not turn a check-in into "
     "a report or list. Exceed this soft target only when essential health or safety "
     "information would otherwise be lost. Make push_message even shorter."
+)
+
+
+CONTINUITY_CHECK_SYSTEM_PROMPT = (
+    "You are Auri's final continuity checker. Decide whether a proactive draft "
+    "forgets or contradicts information the user already supplied. Recent owner "
+    "messages and explicit corrections outrank older memory. Return only JSON with "
+    "verdict (safe, rewrite, or block), reason, message, push_message, "
+    "conversation_intent, and refs. Use safe only when the draft does not ask for "
+    "known information and does not reset a recently discussed topic. Use rewrite "
+    "when the same topic can naturally continue from the known answer; the rewritten "
+    "message must stay within one or two short sentences and must not invent facts. "
+    "Use block when it repeats a resolved question, conflicts with a newer state, "
+    "or cannot be repaired safely. refs must contain the ids of the exchanges, events, "
+    "or memories that support the verdict."
 )
 
 
@@ -1154,6 +1173,7 @@ class ProactiveEngine:
             phase=ProactivePhase.daily,
             category=category,
             insight_key=insight_key,
+            topic_key=decision_data.get("topic_key"),
             message=decision_data.get("message"),
             push_message=decision_data.get("push_message"),
             context_snapshot_id=decision_data.get("context_snapshot_id"),
@@ -1166,6 +1186,12 @@ class ProactiveEngine:
             conversation_intent=decision_data.get(
                 "conversation_intent", ConversationIntent.share
             ),
+        )
+        await self._apply_continuity_preflight(
+            scope,
+            decision,
+            situation_snapshot=situation_snapshot,
+            memory_snapshot=snapshot,
         )
         if decision.should_message and self._would_exceed_outstanding(
             user_id, agent_id, decision.conversation_intent
@@ -1240,6 +1266,35 @@ class ProactiveEngine:
             self._settle_expired_onboarding_slots(user_id, agent_id)
             self._reconcile_onboarding_guides(user_id, agent_id)
         preference = self._relationship_preference(user_message)
+        if preference == "continuity_error":
+            decision = (
+                self.store.get(user_id, agent_id, proactive_id)
+                if proactive_id
+                else None
+            )
+            if decision is None:
+                candidates = self.store.recent_unsettled(
+                    user_id,
+                    agent_id,
+                    since=_utcnow()
+                    - timedelta(
+                        seconds=max(
+                            0,
+                            self.settings.proactive_reply_candidate_seconds,
+                        )
+                    ),
+                    limit=1,
+                )
+                decision = candidates[0] if candidates else None
+            self._mark_continuity_error(decision, user_id, agent_id)
+            self._audit_gate(
+                user_id,
+                agent_id,
+                "chat",
+                "preference",
+                "continuity_error",
+            )
+            return
         if preference == "turn_off":
             self.settings_store.set_enabled(user_id, agent_id, False)
             self._audit_gate(
@@ -1295,6 +1350,19 @@ class ProactiveEngine:
         if any(
             phrase in text
             for phrase in (
+                "你失忆了",
+                "刚说过",
+                "不是刚说过",
+                "已经告诉你",
+                "不是告诉你",
+                "怎么又问",
+                "又问一遍",
+            )
+        ):
+            return "continuity_error"
+        if any(
+            phrase in text
+            for phrase in (
                 "关闭主动消息",
                 "以后别主动发",
                 "不要再主动发",
@@ -1337,6 +1405,35 @@ class ProactiveEngine:
         ):
             return "want_more"
         return None
+
+    def _mark_continuity_error(
+        self,
+        decision: ProactiveDecision | None,
+        user_id: str,
+        agent_id: str,
+    ) -> None:
+        now = _utcnow()
+        if decision is not None:
+            decision.replied = True
+            decision.replied_at = now
+            decision.settled_at = now
+            decision.engagement_state = EngagementState.replied
+            decision.continuity_status = "user_reported_error"
+            decision.continuity_reason = "用户明确指出主动消息忘记了刚说过的内容"
+            self.store.add(decision)
+            if decision.insight_key:
+                self.told_store.update_feedback(
+                    decision.insight_key,
+                    user_id,
+                    agent_id,
+                    ToldFeedback.unhelpful,
+                )
+        self.pacing_store.record_continuity_error(
+            user_id,
+            agent_id,
+            hold_seconds=self.settings.proactive_continuity_hold_seconds,
+            now=now,
+        )
 
     async def _decision_message(self, decision: ProactiveDecision) -> str:
         if decision.message:
@@ -2225,6 +2322,182 @@ class ProactiveEngine:
         return response.content or "", tool_audit
 
     @staticmethod
+    def _continuity_high_risk(decision: ProactiveDecision) -> bool:
+        return bool(
+            decision.conversation_intent is not ConversationIntent.share
+            or "?" in (decision.message or "")
+            or "？" in (decision.message or "")
+            or decision.category
+            in {
+                ProactiveCategory.explore,
+                ProactiveCategory.memory_recall,
+                ProactiveCategory.goal_reminder,
+            }
+        )
+
+    def _recent_continuity_error(
+        self,
+        snapshot: SituationSnapshot | None,
+    ) -> list[str]:
+        if snapshot is None:
+            return []
+        limit = max(0, self.settings.proactive_continuity_hold_seconds)
+        return [
+            signal.id
+            for signal in snapshot.signals
+            if signal.source == "conversation"
+            and signal.kind == "user_exchange"
+            and signal.value.get("continuity_error") is True
+            and signal.age_seconds is not None
+            and signal.age_seconds <= limit
+        ]
+
+    @staticmethod
+    def _continuity_context_text(snapshot: SituationSnapshot) -> str:
+        selected = [
+            signal
+            for signal in snapshot.signals
+            if signal.source in {"conversation", "event_memory"}
+        ]
+        lines: list[str] = []
+        for signal in selected[-32:]:
+            observed = signal.observed_at.isoformat() if signal.observed_at else "unknown"
+            lines.append(
+                f"[{signal.id}] {signal.source}/{signal.kind} "
+                f"observed_at={observed} freshness={signal.freshness.value} "
+                f"value={json.dumps(signal.value, ensure_ascii=False)}"
+            )
+        return "\n".join(lines) or "No recent conversation or event context."
+
+    async def _apply_continuity_preflight(
+        self,
+        scope: MemoryScope,
+        decision: ProactiveDecision,
+        *,
+        situation_snapshot: SituationSnapshot | None,
+        memory_snapshot: Any,
+    ) -> None:
+        if not decision.should_message or not decision.message:
+            decision.continuity_status = "not_applicable"
+            return
+        if not self._continuity_high_risk(decision):
+            decision.continuity_status = "not_required"
+            return
+        if not self.settings.proactive_continuity_check_enabled:
+            decision.continuity_status = "disabled"
+            return
+        if self.context_builder is None:
+            decision.continuity_status = "context_builder_disabled"
+            return
+
+        recent_error_refs = self._recent_continuity_error(situation_snapshot)
+        hold_active = self.pacing_store.continuity_hold_active(
+            scope.user_id,
+            scope.agent_id,
+        )
+        if (
+            decision.conversation_intent is not ConversationIntent.share
+            and (recent_error_refs or hold_active)
+        ):
+            decision.should_message = False
+            decision.message = None
+            decision.push_message = None
+            decision.continuity_status = "blocked_recent_error"
+            decision.continuity_reason = "用户近期指出过对话连续性错误，暂缓新的互动式提问"
+            decision.continuity_refs = recent_error_refs
+            decision.silence_reason = decision.continuity_reason
+            return
+
+        if situation_snapshot is None:
+            decision.should_message = False
+            decision.message = None
+            decision.push_message = None
+            decision.continuity_status = "blocked_context_unavailable"
+            decision.continuity_reason = "连续性上下文不可用，高风险主动消息安全静默"
+            decision.silence_reason = decision.continuity_reason
+            return
+
+        memory_lines = [
+            f"[memory_{entry.id}] {entry.content}"
+            for entry in [*memory_snapshot.memory, *memory_snapshot.user]
+        ]
+        prompt = (
+            f"DRAFT_CATEGORY: {decision.category.value if decision.category else 'unknown'}\n"
+            f"DRAFT_TOPIC_KEY: {decision.topic_key or decision.insight_key or 'unknown'}\n"
+            f"DRAFT_INTENT: {decision.conversation_intent.value}\n"
+            f"DRAFT_MESSAGE: {decision.message}\n"
+            f"DRAFT_PUSH_MESSAGE: {decision.push_message or ''}\n\n"
+            "RECENT_CONTINUITY_CONTEXT:\n"
+            f"{self._continuity_context_text(situation_snapshot)}\n\n"
+            "DURABLE_MEMORY:\n"
+            + ("\n".join(memory_lines) or "No durable memory.")
+        )
+        try:
+            with token_context(
+                kind="proactive_continuity_check",
+                user_id=scope.user_id,
+            ):
+                response = await self.llm.complete(
+                    [
+                        {"role": "system", "content": CONTINUITY_CHECK_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=None,
+                    max_tokens=self.settings.proactive_continuity_check_max_tokens,
+                )
+            data = self._extract_json(response.content)
+        except Exception:
+            data = None
+
+        if not isinstance(data, dict) or data.get("verdict") not in {
+            "safe",
+            "rewrite",
+            "block",
+        }:
+            decision.should_message = False
+            decision.message = None
+            decision.push_message = None
+            decision.continuity_status = "blocked_check_error"
+            decision.continuity_reason = "连续性检查失败，高风险主动消息安全静默"
+            decision.silence_reason = decision.continuity_reason
+            return
+
+        verdict = str(data["verdict"])
+        decision.continuity_status = verdict
+        decision.continuity_reason = str(data.get("reason") or "").strip() or None
+        raw_refs = data.get("refs")
+        decision.continuity_refs = (
+            list(dict.fromkeys(item for item in raw_refs if isinstance(item, str)))
+            if isinstance(raw_refs, list)
+            else []
+        )
+        if verdict == "safe":
+            return
+        if verdict == "rewrite":
+            rewritten = str(data.get("message") or "").strip()
+            if rewritten:
+                decision.message = rewritten
+                decision.push_message = (
+                    str(data.get("push_message") or "").strip() or None
+                )
+                decision.conversation_intent = self._coerce_conversation_intent(
+                    data.get("conversation_intent")
+                )
+                if decision.category is not None:
+                    decision.insight_key = self._derive_insight_key(
+                        decision.category,
+                        rewritten,
+                    )
+                return
+        decision.should_message = False
+        decision.message = None
+        decision.push_message = None
+        decision.continuity_status = "blocked"
+        decision.silence_reason = (
+            decision.continuity_reason or "主动草稿与近期对话或记忆冲突"
+        )
+
+    @staticmethod
     def _extract_json(content: str) -> Any:
         content = (content or "").strip()
         try:
@@ -2301,6 +2574,11 @@ class ProactiveEngine:
         summary = str(data.get("situation_summary") or "").strip() or None
         decision_reason = str(data.get("decision_reason") or "").strip() or None
         silence_reason = str(data.get("silence_reason") or "").strip() or None
+        topic_key = re.sub(
+            r"[^a-zA-Z0-9_:-]+",
+            "_",
+            str(data.get("topic_key") or "").strip(),
+        ).strip("_") or None
         try:
             confidence = float(data.get("situation_confidence"))
         except (TypeError, ValueError):
@@ -2374,6 +2652,7 @@ class ProactiveEngine:
         return {
             "should_message": should_message,
             "insight_key": insight_key,
+            "topic_key": topic_key,
             "message": message,
             "push_message": push_message,
             "category": category,

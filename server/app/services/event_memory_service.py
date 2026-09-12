@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from app.memory.event_extraction import EventExtractor
@@ -34,6 +37,7 @@ class EventMemoryService:
         normal_half_life_days: float = 45.0,
         high_half_life_days: float = 180.0,
         current_state_ttl_hours: float = 8.0,
+        audit_path: Path | None = None,
     ) -> None:
         self.store = store
         self.observation_store = observation_store
@@ -45,6 +49,10 @@ class EventMemoryService:
         self.normal_half_life_days = normal_half_life_days
         self.high_half_life_days = high_half_life_days
         self.current_state_ttl_hours = current_state_ttl_hours
+        self.audit_path = Path(audit_path) if audit_path is not None else None
+        self._audit_lock = threading.Lock()
+        if self.audit_path is not None:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _timezone(self, user_id: str) -> str:
         if self.timezone_resolver is not None:
@@ -97,6 +105,7 @@ class EventMemoryService:
         scope: MemoryScope,
         session_id: str,
         message: dict[str, Any],
+        conversation_context: list[dict[str, Any]] | None = None,
     ) -> list[EventRecord]:
         """Persist the raw owner source first, then best-effort extract structured events."""
         text = self._message_text(message.get("content", ""))
@@ -125,7 +134,19 @@ class EventMemoryService:
         )
         await asyncio.to_thread(self.observation_store.add, observation)
 
+        context_ids = [
+            str(item.get("id"))
+            for item in (conversation_context or [])[-4:]
+            if item.get("id")
+        ]
         if self.extractor is None or not text:
+            self._audit(
+                scope=scope,
+                session_id=session_id,
+                message_id=message_id,
+                context_ids=context_ids,
+                status="disabled" if self.extractor is None else "empty_message",
+            )
             return []
         recent = await asyncio.to_thread(
             self.store.query,
@@ -134,17 +155,40 @@ class EventMemoryService:
             limit=20,
         )
         try:
-            candidates = await self.extractor.extract(
-                user_id=scope.user_id,
-                message_text=text,
-                message_at=message_at,
-                timezone_name=self._timezone(scope.user_id),
-                recent_events=recent,
+            if hasattr(self.extractor, "extract_with_diagnostics"):
+                outcome = await self.extractor.extract_with_diagnostics(
+                    user_id=scope.user_id,
+                    message_text=text,
+                    message_at=message_at,
+                    timezone_name=self._timezone(scope.user_id),
+                    recent_events=recent,
+                    conversation_context=conversation_context,
+                )
+                candidates = outcome.candidates
+                extraction_status = outcome.status
+            else:
+                candidates = await self.extractor.extract(
+                    user_id=scope.user_id,
+                    message_text=text,
+                    message_at=message_at,
+                    timezone_name=self._timezone(scope.user_id),
+                    recent_events=recent,
+                    conversation_context=conversation_context,
+                )
+                extraction_status = "ok" if candidates else "no_candidates"
+        except Exception as exc:
+            self._audit(
+                scope=scope,
+                session_id=session_id,
+                message_id=message_id,
+                context_ids=context_ids,
+                status="extractor_error",
+                error_type=type(exc).__name__,
             )
-        except Exception:
             return []
 
         records: list[EventRecord] = []
+        failed = 0
         for candidate in candidates:
             normalized = self._normalize_candidate(candidate, message_at, scope.user_id)
             try:
@@ -166,8 +210,56 @@ class EventMemoryService:
                 )
                 records.append(record)
             except Exception:
+                failed += 1
                 continue
+        self._audit(
+            scope=scope,
+            session_id=session_id,
+            message_id=message_id,
+            context_ids=context_ids,
+            status=(
+                "persist_partial"
+                if failed
+                else extraction_status
+            ),
+            candidate_count=len(candidates),
+            persisted_keys=[record.event_key for record in records],
+        )
         return records
+
+    def _audit(
+        self,
+        *,
+        scope: MemoryScope,
+        session_id: str,
+        message_id: str,
+        context_ids: list[str],
+        status: str,
+        candidate_count: int = 0,
+        persisted_keys: list[str] | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        if self.audit_path is None:
+            return
+        record = {
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "user_id": scope.user_id,
+            "agent_id": scope.agent_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "context_message_ids": context_ids,
+            "status": status,
+            "candidate_count": candidate_count,
+            "persisted_count": len(persisted_keys or []),
+            "event_keys": persisted_keys or [],
+            "error_type": error_type,
+        }
+        try:
+            with self._audit_lock:
+                with self.audit_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
 
     def _normalize_candidate(
         self,
