@@ -228,6 +228,22 @@ class Settings(BaseSettings):
     proactive_sleep_detection_enabled: bool = True
     proactive_sleep_stage_freshness_seconds: int = 900
 
+    # Personal sleep context. A bounded per-user window is learned from the
+    # canonical main-sleep rows produced by sleep_dual_v1. Live sleep stages
+    # remain the strongest signal; the personal window replaces the fixed
+    # 23-08 fallback only when enough recent, stable nights are available.
+    proactive_personal_sleep_enabled: bool = True
+    proactive_personal_sleep_lookback_days: int = 28
+    proactive_personal_sleep_min_nights: int = 5
+    proactive_personal_sleep_confidence_threshold: float = 0.55
+    proactive_personal_sleep_wake_tail_minutes: int = 30
+    proactive_personal_sleep_end_early_tolerance_minutes: int = 30
+    proactive_personal_sleep_end_stability_minutes: int = 45
+    proactive_personal_sleep_max_window_hours: int = 14
+    proactive_personal_sleep_awake_lease_minutes: int = 90
+    proactive_personal_sleep_wake_delivery_cooldown_minutes: int = 30
+    proactive_personal_sleep_wake_opportunity_ttl_minutes: int = 360
+
     # Push notifications via JPush. When either value is unset the push sender
     # degrades to a no-op, so chat-session delivery keeps working without a vendor.
     jpush_app_key: str | None = None

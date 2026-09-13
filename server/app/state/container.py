@@ -73,6 +73,7 @@ from app.proactive.preferences import PreferenceStore
 from app.proactive.profile import ProfileStore
 from app.proactive.push import NullPushSender
 from app.proactive.settings import ProactiveSettingsStore
+from app.proactive.sleep_context import SleepContextController, SleepContextStore
 from app.proactive.store import ProactiveStore
 from app.reminders.scheduler import ReminderScheduler
 from app.reminders.service import ReminderService
@@ -142,6 +143,8 @@ class Container:
     profile_store: ProfileStore
     pacing_store: ProactivePacingStore
     onboarding_pacing_store: ProactivePacingStore
+    sleep_context_store: SleepContextStore
+    sleep_context: SleepContextController
     proactive_engine: ProactiveEngine
     proactive_context_builder: ProactiveContextBuilder
     proactive_audit_logger: ProactiveAuditLogger
@@ -249,6 +252,36 @@ def create_container(settings: Settings) -> Container:
     )
     onboarding_pacing_store = ProactivePacingStore(
         settings.data_dir / "proactive" / "onboarding_pacing.db"
+    )
+    sleep_context_store = SleepContextStore(
+        settings.data_dir / "proactive" / "sleep_context.db"
+    )
+    sleep_context = SleepContextController(
+        store=sleep_context_store,
+        sleep_score_store=sleep_score_store,
+        timezone_resolver=resolve_user_tz,
+        lookback_days=settings.proactive_personal_sleep_lookback_days,
+        min_nights=settings.proactive_personal_sleep_min_nights,
+        confidence_threshold=(
+            settings.proactive_personal_sleep_confidence_threshold
+        ),
+        wake_tail_minutes=settings.proactive_personal_sleep_wake_tail_minutes,
+        end_early_tolerance_minutes=(
+            settings.proactive_personal_sleep_end_early_tolerance_minutes
+        ),
+        end_stability_minutes=(
+            settings.proactive_personal_sleep_end_stability_minutes
+        ),
+        max_window_hours=settings.proactive_personal_sleep_max_window_hours,
+        awake_lease_minutes=(
+            settings.proactive_personal_sleep_awake_lease_minutes
+        ),
+        wake_delivery_cooldown_minutes=(
+            settings.proactive_personal_sleep_wake_delivery_cooldown_minutes
+        ),
+        wake_opportunity_ttl_minutes=(
+            settings.proactive_personal_sleep_wake_opportunity_ttl_minutes
+        ),
     )
     reminder_store = ReminderStore(
         settings.data_dir / "reminders" / "reminders.db"
@@ -416,6 +449,7 @@ def create_container(settings: Settings) -> Container:
         profile_store=profile_store,
         pacing_store=pacing_store,
         onboarding_pacing_store=onboarding_pacing_store,
+        sleep_context=sleep_context,
         device_store=device_store,
         credential_store=xiaomi_credential_store,
         presence_service=presence_service,
@@ -593,6 +627,7 @@ def create_container(settings: Settings) -> Container:
         audit_logger=proactive_audit_logger,
         gate_logger=proactive_gate_logger,
         has_pending_chat=chat_reply_store.has_open,
+        sleep_context=sleep_context,
     )
 
     chat_reply_service = ChatReplyService(
@@ -687,6 +722,8 @@ def create_container(settings: Settings) -> Container:
         profile_store=profile_store,
         pacing_store=pacing_store,
         onboarding_pacing_store=onboarding_pacing_store,
+        sleep_context_store=sleep_context_store,
+        sleep_context=sleep_context,
         proactive_engine=proactive_engine,
         proactive_context_builder=proactive_context_builder,
         proactive_audit_logger=proactive_audit_logger,

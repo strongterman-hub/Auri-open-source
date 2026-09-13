@@ -35,6 +35,7 @@ from app.proactive.preferences import PreferenceStore
 from app.proactive.profile import PROFILE_SLOTS, ProfileStore
 from app.proactive.push import NullPushSender
 from app.proactive.settings import ProactiveSettingsStore
+from app.proactive.sleep_context import SleepGateDecision
 from app.proactive.store import ProactiveStore
 from app.services.agent_service import AgentService
 from app.services.memory_service import MemoryService
@@ -131,6 +132,54 @@ class StaticContextBuilder:
         return self.snapshot
 
 
+class AlwaysSleepingContext:
+    def __init__(self) -> None:
+        self.evaluate_calls = 0
+        self.deferred: list[str] = []
+
+    def evaluate(self, *_args, **_kwargs) -> SleepGateDecision:
+        self.evaluate_calls += 1
+        return SleepGateDecision(
+            blocked=True,
+            source="personal_sleep_window",
+            state="predicted_sleeping",
+            sleep_day="2026-09-05",
+            blocked_until=datetime(2026, 9, 5, 3, 45, tzinfo=timezone.utc),
+            confidence=0.9,
+        )
+
+    def defer(self, _user_id, _agent_id, trigger_source, _gate) -> None:
+        self.deferred.append(trigger_source)
+
+    def recent_wake_delivery(self, *_args, **_kwargs) -> bool:
+        return False
+
+
+class WakeDueContext:
+    def __init__(self) -> None:
+        self.consumed: list[bool] = []
+
+    def evaluate(self, *_args, **_kwargs) -> SleepGateDecision:
+        return SleepGateDecision(
+            blocked=False,
+            source="confirmed_sleep_end",
+            state="awake",
+            sleep_day="2026-09-05",
+            confidence=0.9,
+            wake_followup_due=True,
+            deferred_sources=("health", "weather"),
+        )
+
+    def recent_wake_delivery(self, *_args, **_kwargs) -> bool:
+        return False
+
+    def wake_context_text(self, *_args, **_kwargs) -> str:
+        return "Sleep ended; re-evaluate current health and weather context."
+
+    def consume(self, _user_id, _agent_id, _gate, *, sent: bool) -> None:
+        self.consumed.append(sent)
+
+
 def _build_engine(
     tmp_dir: Path,
     llm_content: str,
@@ -142,6 +191,7 @@ def _build_engine(
     pacing_enabled: bool = False,
     health_store=None,
     trending_service=None,
+    sleep_context=None,
     continuity_check_enabled: bool = False,
 ) -> tuple[ProactiveEngine, SessionService, ToldStore, ProactiveStore, PresenceService]:
     settings = Settings(
@@ -183,6 +233,7 @@ def _build_engine(
         pacing_store=pacing_store,
         health_store=health_store,
         trending_service=trending_service,
+        sleep_context=sleep_context,
     )
     return engine, session_service, told_store, store, presence
 
@@ -905,6 +956,75 @@ def test_onboarding_suppressed_when_asleep(tmp_dir: Path) -> None:
     decision = asyncio.run(engine.evaluate_user("u1", "default", TriggerType.time))
 
     assert decision is None
+
+
+def test_dense_onboarding_bypasses_personal_sleep_window(tmp_dir: Path) -> None:
+    sleep_context = AlwaysSleepingContext()
+    engine, session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        '{"slot": "name", "message": "怎么称呼你？"}',
+        onboarding_enabled=True,
+        sleep_context=sleep_context,
+    )
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+
+    decision = asyncio.run(
+        engine.evaluate_onboarding("u1", "default", TriggerType.time)
+    )
+
+    assert decision is not None
+    assert decision.phase is ProactivePhase.onboarding
+    assert sleep_context.evaluate_calls == 0
+
+
+def test_slow_onboarding_defers_inside_personal_sleep_window(tmp_dir: Path) -> None:
+    sleep_context = AlwaysSleepingContext()
+    engine, session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        '{"slot": "name", "message": "怎么称呼你？"}',
+        onboarding_enabled=True,
+        sleep_context=sleep_context,
+    )
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    engine.profile_store.set_phase("u1", "default", "slow")
+
+    decision = asyncio.run(
+        engine.evaluate_onboarding("u1", "default", TriggerType.time)
+    )
+
+    assert decision is None
+    assert sleep_context.evaluate_calls == 1
+    assert sleep_context.deferred == ["onboarding"]
+
+
+def test_confirmed_wake_rechecks_latest_context_and_consumes_once(tmp_dir: Path) -> None:
+    sleep_context = WakeDueContext()
+    engine, session_service, _told, _store, _presence = _build_engine(
+        tmp_dir,
+        (
+            '{"should_message": true, "insight_key": "wake_tip", '
+            '"message": "睡醒啦，今天别忘了慢慢补点水", "importance": 7}'
+        ),
+        sleep_context=sleep_context,
+    )
+    asyncio.run(
+        session_service.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+
+    decision = asyncio.run(
+        engine.evaluate_daily("u1", "default", TriggerType.time, "health")
+    )
+
+    assert decision is not None
+    assert decision.trigger_source == "wake"
+    assert sleep_context.consumed == [True]
+    assert "re-evaluate current health and weather context" in str(
+        engine.llm.calls[-1]
+    )
 
 
 def test_daily_still_respects_quiet_hours(tmp_dir: Path) -> None:

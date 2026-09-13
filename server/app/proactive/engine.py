@@ -47,6 +47,7 @@ from app.proactive.profile import (
     ProfileStore,
 )
 from app.proactive.settings import ProactiveSettingsStore
+from app.proactive.sleep_context import SleepContextController, SleepGateDecision
 from app.proactive.store import ProactiveStore
 from app.services.memory_service import MemoryService
 from app.services.event_memory_service import EventMemoryService
@@ -230,6 +231,7 @@ TRIGGER_SOURCE_DESCRIPTION: dict[str, str] = {
     "schedule": "日程相关事件更新",
     "phone_state": "手机状态事件更新",
     "trending": "有新的热点内容可用",
+    "wake": "个人睡眠情境已结束：重新读取最新数据，最多恢复一条低压力主动消息",
 }
 
 
@@ -268,6 +270,7 @@ class ProactiveEngine:
         audit_logger: ProactiveAuditLogger | None = None,
         gate_logger: ProactiveGateLogger | None = None,
         has_pending_chat: Callable[[str, str], bool] | None = None,
+        sleep_context: SleepContextController | None = None,
     ) -> None:
         self.llm = llm
         self.memory_service = memory_service
@@ -294,6 +297,7 @@ class ProactiveEngine:
         self.audit_logger = audit_logger
         self.gate_logger = gate_logger
         self.has_pending_chat = has_pending_chat
+        self.sleep_context = sleep_context
         self._user_locks: dict[str, asyncio.Lock] = {}
         self._dense_evaluating: set[str] = set()
 
@@ -312,7 +316,13 @@ class ProactiveEngine:
         decisions: list[ProactiveDecision] = []
         now = _utcnow()
         for user_id, agent_id in await self.session_service.list_users():
-            if not self._is_daily_due(user_id, agent_id, now):
+            wake_due = bool(
+                self.sleep_context
+                and self.sleep_context.has_due_followup(
+                    user_id, agent_id, now=now
+                )
+            )
+            if not wake_due and not self._is_daily_due(user_id, agent_id, now):
                 self._audit_gate(user_id, agent_id, "time", "blocked", "not_due")
                 continue
             try:
@@ -444,15 +454,67 @@ class ProactiveEngine:
             )
             return None
 
-        if self._is_do_not_disturb(user_id, agent_id):
+        sleep_gate = self._sleep_gate(user_id, agent_id)
+        if sleep_gate.blocked:
+            if self.sleep_context is not None:
+                self.sleep_context.defer(
+                    user_id, agent_id, trigger_source, sleep_gate
+                )
             self._audit_gate(
-                user_id, agent_id, trigger_source, "blocked", "do_not_disturb"
+                user_id,
+                agent_id,
+                trigger_source,
+                "blocked",
+                sleep_gate.source,
+                sleep_gate=sleep_gate,
             )
             return None
 
-        return await self._evaluate_daily(
-            user_id, agent_id, trigger_type, trigger_source
+        if (
+            self.sleep_context is not None
+            and not sleep_gate.wake_followup_due
+            and self.sleep_context.recent_wake_delivery(user_id, agent_id)
+        ):
+            self._audit_gate(
+                user_id,
+                agent_id,
+                trigger_source,
+                "blocked",
+                "wake_followup_cooldown",
+                sleep_gate=sleep_gate,
+            )
+            return None
+
+        effective_trigger = "wake" if sleep_gate.wake_followup_due else trigger_source
+        if sleep_gate.wake_followup_due:
+            self._audit_gate(
+                user_id,
+                agent_id,
+                effective_trigger,
+                "allowed",
+                "sleep_release",
+                sleep_gate=sleep_gate,
+            )
+        wake_context = (
+            self.sleep_context.wake_context_text(user_id, agent_id, sleep_gate)
+            if self.sleep_context is not None and sleep_gate.wake_followup_due
+            else None
         )
+        decision = await self._evaluate_daily(
+            user_id,
+            agent_id,
+            trigger_type,
+            effective_trigger,
+            wake_context=wake_context,
+        )
+        if self.sleep_context is not None and sleep_gate.wake_followup_due:
+            self.sleep_context.consume(
+                user_id,
+                agent_id,
+                sleep_gate,
+                sent=bool(decision is not None and decision.should_message),
+            )
+        return decision
 
     async def _evaluate_onboarding_locked(
         self,
@@ -848,7 +910,34 @@ class ProactiveEngine:
             return None
         if not self.settings_store.is_enabled(user_id, agent_id):
             return None
-        if self._is_do_not_disturb(user_id, agent_id):
+        sleep_gate = self._sleep_gate(user_id, agent_id)
+        if sleep_gate.blocked:
+            if self.sleep_context is not None:
+                self.sleep_context.defer(
+                    user_id, agent_id, "onboarding", sleep_gate
+                )
+            self._audit_gate(
+                user_id,
+                agent_id,
+                "onboarding",
+                "blocked",
+                sleep_gate.source,
+                sleep_gate=sleep_gate,
+            )
+            return None
+        if (
+            self.sleep_context is not None
+            and not sleep_gate.wake_followup_due
+            and self.sleep_context.recent_wake_delivery(user_id, agent_id)
+        ):
+            self._audit_gate(
+                user_id,
+                agent_id,
+                "onboarding",
+                "blocked",
+                "wake_followup_cooldown",
+                sleep_gate=sleep_gate,
+            )
             return None
         if self._within_onboarding_cooldown(user_id, agent_id):
             return None
@@ -861,6 +950,10 @@ class ProactiveEngine:
         )
         if not profile_open and not guide_open:
             self._transition_onboarding_phase(user_id, agent_id)
+            if self.sleep_context is not None and sleep_gate.wake_followup_due:
+                self.sleep_context.consume(
+                    user_id, agent_id, sleep_gate, sent=False
+                )
             return None
 
         if profile_open:
@@ -891,6 +984,10 @@ class ProactiveEngine:
             self.profile_store.mark_message_sent(user_id, agent_id)
             await self._deliver_and_persist(decision)
             self.onboarding_pacing_store.record_sent(user_id, agent_id)
+            if self.sleep_context is not None and sleep_gate.wake_followup_due:
+                self.sleep_context.consume(
+                    user_id, agent_id, sleep_gate, sent=True
+                )
             return decision
 
         if guide_open:
@@ -924,6 +1021,10 @@ class ProactiveEngine:
             self.profile_store.mark_message_sent(user_id, agent_id)
             await self._deliver_and_persist(decision)
             self.onboarding_pacing_store.record_sent(user_id, agent_id)
+            if self.sleep_context is not None and sleep_gate.wake_followup_due:
+                self.sleep_context.consume(
+                    user_id, agent_id, sleep_gate, sent=True
+                )
             return decision
 
         return None
@@ -1030,6 +1131,8 @@ class ProactiveEngine:
         agent_id: str,
         trigger_type: TriggerType,
         trigger_source: str = "time",
+        *,
+        wake_context: str | None = None,
     ) -> ProactiveDecision | None:
         self._settle_daily_opportunities(user_id, agent_id)
         if self._is_pacing_blocked(user_id, agent_id):
@@ -1153,6 +1256,7 @@ class ProactiveEngine:
             trending_items,
             trigger_source,
             situation_snapshot,
+            wake_context,
         )
         category = decision_data["category"]
         insight_key = decision_data["insight_key"]
@@ -1262,6 +1366,8 @@ class ProactiveEngine:
         proactive_id: str | None = None,
     ) -> None:
         """Apply explicit relationship preference and restart-safe reply attribution."""
+        if self.sleep_context is not None:
+            self.sleep_context.record_user_activity(user_id, agent_id)
         if self.settings.proactive_onboarding_enabled:
             self._settle_expired_onboarding_slots(user_id, agent_id)
             self._reconcile_onboarding_guides(user_id, agent_id)
@@ -1746,7 +1852,12 @@ class ProactiveEngine:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
 
-    def _within_quiet_hours(self, now: datetime | None = None) -> bool:
+    def _within_quiet_hours(
+        self,
+        now: datetime | None = None,
+        *,
+        timezone_name: str | None = None,
+    ) -> bool:
         window = self.settings.proactive_quiet_hours.strip()
         if not window:
             return False
@@ -1765,7 +1876,12 @@ class ProactiveEngine:
             current = now
         else:
             try:
-                current = datetime.now(ZoneInfo(self.settings.proactive_quiet_hours_tz))
+                current = datetime.now(
+                    ZoneInfo(
+                        timezone_name
+                        or self.settings.proactive_quiet_hours_tz
+                    )
+                )
             except ZoneInfoNotFoundError:
                 current = datetime.now()
         hour = current.hour
@@ -1974,14 +2090,71 @@ class ProactiveEngine:
         during, for example, a late-night install. Onboarding still honors real
         sleep-stage evidence via ``_probably_asleep``.
         """
+        return self._sleep_gate(
+            user_id,
+            agent_id,
+            fallback_quiet_hours=fallback_quiet_hours,
+        ).blocked
+
+    def _sleep_gate(
+        self,
+        user_id: str,
+        agent_id: str,
+        *,
+        fallback_quiet_hours: bool = True,
+    ) -> SleepGateDecision:
+        """Apply live sleep evidence, then a finite personal/fixed window."""
         asleep = self._probably_asleep(user_id, agent_id)
+        if (
+            self.sleep_context is not None
+            and self.settings.proactive_personal_sleep_enabled
+        ):
+            decision = self.sleep_context.evaluate(
+                user_id, agent_id, live_stage=asleep
+            )
+            if decision.source != "fixed_window_fallback":
+                return decision
+            if not fallback_quiet_hours or asleep is False:
+                return decision
+            if asleep is True:
+                return SleepGateDecision(
+                    blocked=True,
+                    source="fresh_sleep_stage",
+                    state="confirmed_sleeping",
+                    confidence=1.0,
+                )
+            within_fixed = self._within_quiet_hours(
+                timezone_name=self._user_timezone(user_id)
+            )
+            return SleepGateDecision(
+                blocked=within_fixed,
+                source="fixed_quiet_window",
+                state="fallback_sleeping" if within_fixed else "awake",
+                confidence=decision.confidence,
+            )
+
         if asleep is True:
-            return True
-        if asleep is False:
-            return False
-        if not fallback_quiet_hours:
-            return False
-        return self._within_quiet_hours()
+            return SleepGateDecision(
+                blocked=True,
+                source="fresh_sleep_stage",
+                state="confirmed_sleeping",
+                confidence=1.0,
+            )
+        if asleep is False or not fallback_quiet_hours:
+            return SleepGateDecision(
+                blocked=False,
+                source="fresh_awake_stage" if asleep is False else "no_sleep_gate",
+                state="awake",
+                confidence=1.0 if asleep is False else None,
+            )
+        within_fixed = self._within_quiet_hours(
+            timezone_name=self._user_timezone(user_id)
+        )
+        return SleepGateDecision(
+            blocked=within_fixed,
+            source="fixed_quiet_window",
+            state="fallback_sleeping" if within_fixed else "awake",
+        )
 
     def _user_timezone(self, user_id: str) -> str:
         if self.timezone_resolver is not None:
@@ -2120,6 +2293,7 @@ class ProactiveEngine:
         trending_items: list[Any],
         trigger_source: str = "time",
         situation_snapshot: SituationSnapshot | None = None,
+        wake_context: str | None = None,
     ) -> dict[str, Any]:
         memory_prompt = self.memory_service.build_system_prompt(snapshot)
         now = datetime.now(resolve_zoneinfo(self._user_timezone(scope.user_id)))
@@ -2193,6 +2367,7 @@ class ProactiveEngine:
             "If two interactive messages are outstanding, choose share or stay silent. "
             "During resting recovery probes, prefer a low-pressure share or soft_check_in."
         )
+        wake_guidance = wake_context or "No deferred wake opportunity."
         messages = [
             {"role": "system", "content": PROACTIVE_SYSTEM_PROMPT},
             {
@@ -2200,6 +2375,7 @@ class ProactiveEngine:
                 "content": (
                     f"Current local time (authoritative): {now.isoformat()}\n"
                     f"Trigger: {trigger_text}\n\n"
+                    f"Wake recovery context: {wake_guidance}\n\n"
                     f"Relationship pacing: {pacing_guidance}\n\n"
                     f"Situation snapshot (authoritative for evidence ids and "
                     f"freshness):\n{situation_text}\n\n"
@@ -2687,6 +2863,8 @@ class ProactiveEngine:
         trigger_source: str,
         outcome: str,
         reason: str,
+        *,
+        sleep_gate: SleepGateDecision | None = None,
     ) -> None:
         if self.gate_logger is None:
             return
@@ -2699,6 +2877,7 @@ class ProactiveEngine:
                 reason=reason,
                 pacing_state=self.pacing_store.get_state(user_id, agent_id),
                 outstanding=self.store.outstanding_counts(user_id, agent_id),
+                sleep_state=(sleep_gate.audit_dict() if sleep_gate else None),
             )
         except Exception:
             # Audit persistence must not change the user-facing decision path.

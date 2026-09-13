@@ -18,6 +18,7 @@ from app.proactive.pacing import ProactivePacingStore
 from app.proactive.preferences import PreferenceStore
 from app.proactive.profile import ProfileStore
 from app.proactive.settings import ProactiveSettingsStore
+from app.proactive.sleep_context import SleepContextController
 from app.proactive.store import ProactiveStore
 from app.reminders.store import ReminderStore
 from app.services.device_store import DeviceStore
@@ -52,6 +53,7 @@ class AccountDeletionService:
         profile_store: ProfileStore,
         pacing_store: ProactivePacingStore,
         onboarding_pacing_store: ProactivePacingStore,
+        sleep_context: SleepContextController | None,
         device_store: DeviceStore,
         credential_store: CredentialStore,
         presence_service: PresenceService,
@@ -78,6 +80,7 @@ class AccountDeletionService:
         self.profile_store = profile_store
         self.pacing_store = pacing_store
         self.onboarding_pacing_store = onboarding_pacing_store
+        self.sleep_context = sleep_context
         self.device_store = device_store
         self.credential_store = credential_store
         self.presence_service = presence_service
@@ -121,6 +124,8 @@ class AccountDeletionService:
         self.profile_store.delete_user(user_id, agent_id)
         self.pacing_store.delete_user(user_id, agent_id)
         self.onboarding_pacing_store.delete_user(user_id, agent_id)
+        if self.sleep_context is not None:
+            self.sleep_context.clear(user_id, agent_id)
         self.device_store.delete_user(user_id, agent_id)
         self.credential_store.delete(user_id)
         self.presence_service.delete_user(user_id, agent_id)
