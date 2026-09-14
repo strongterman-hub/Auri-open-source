@@ -10,7 +10,6 @@ from app.agent.llm import LLMClient
 from app.core.token_logger import token_context
 from app.memory.events import EventCandidate, EventRecord
 
-
 EVENT_EXTRACTION_SYSTEM_PROMPT = """You extract the user's real-life events into a timeline.
 Return only a JSON array. Return [] when the message contains no event, plan, state change,
 correction, or meaningful completed action.
@@ -19,6 +18,10 @@ Rules:
 - Treat only facts asserted by the USER as owner facts. Never turn assistant guesses into facts.
 - Resolve relative time from MESSAGE_TIME in USER_TIMEZONE, never from processing time.
 - Reuse an existing event_key/thread_key when the message updates the same event.
+- When a differently worded title is progress on an existing event, set updates_event_key
+  to that exact RECENT_EVENTS key. Do not create a second plan/completion for the same outing.
+- Preserve user explanations and corrections (early sleep for a morning meeting,
+  an afternoon nap included in a daily total). A correction is meaningful, not an empty event.
 - CONVERSATION_CONTEXT is supplied only to resolve what the current user message
   answers or refers to. It is not owner evidence by itself. Only facts asserted
   or confirmed by the current USER_MESSAGE may create or update owner facts.
@@ -59,7 +62,8 @@ Each array item has this shape:
   "relations": [
     {"target_event_key":"...","relation":"before|after|during|caused_by|follows|corrects"}
   ],
-  "corrects_event_key": "... or null"
+  "corrects_event_key": "... or null",
+  "updates_event_key": "existing key or null"
 }
 """
 
@@ -118,7 +122,9 @@ class EventExtractor:
                 "occurred_start": (
                     event.occurred_start.isoformat() if event.occurred_start else None
                 ),
-                "occurred_end": event.occurred_end.isoformat() if event.occurred_end else None,
+                "occurred_end": (
+                    event.occurred_end.isoformat() if event.occurred_end else None
+                ),
                 "location": event.location,
             }
             for event in recent_events[:20]
@@ -154,16 +160,29 @@ class EventExtractor:
                 ),
             },
         ]
-        try:
-            with token_context(kind="event_extraction", user_id=user_id):
-                response = await self.llm.complete(
-                    messages,
-                    tools=None,
-                    max_tokens=self.max_tokens,
-                )
-        except Exception:
-            return EventExtractionOutcome([], "extractor_error")
-        return self.parse_with_diagnostics(response.content)
+        for attempt in range(2):
+            try:
+                with token_context(kind="event_extraction", user_id=user_id):
+                    response = await self.llm.complete_structured(
+                        messages, max_tokens=self.max_tokens
+                    )
+            except Exception:
+                return EventExtractionOutcome([], "extractor_error")
+            outcome = (
+                EventExtractionOutcome([], "truncated")
+                if response.finish_reason == "length"
+                else self.parse_with_diagnostics(response.content)
+            )
+            if outcome.status in {"ok", "no_candidates"}:
+                return outcome
+            messages = [
+                *messages,
+                {
+                    "role": "user",
+                    "content": "Return a complete compact JSON array only. Reuse existing keys for the same event; explicitly link corrections.",
+                },
+            ]
+        return outcome
 
     @staticmethod
     def parse(content: str) -> list[EventCandidate]:

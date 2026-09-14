@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime, timezone
 from enum import Enum
@@ -78,6 +79,7 @@ class EventCandidate(BaseModel):
     details: list[EventDetailCandidate] = Field(default_factory=list)
     relations: list[EventRelationCandidate] = Field(default_factory=list)
     corrects_event_key: str | None = Field(default=None, max_length=200)
+    updates_event_key: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def _validate_time_range(self) -> "EventCandidate":
@@ -133,6 +135,15 @@ class EventRecord(BaseModel):
     details: list[EventDetail] = Field(default_factory=list)
     relations: list[EventRelation] = Field(default_factory=list)
 
+    def active_at(self, now: datetime) -> bool:
+        end = self.current_until or self.occurred_end
+        return (
+            self.status in {EventStatus.planned, EventStatus.in_progress}
+            and self.occurred_start is not None
+            and end is not None
+            and _as_aware(self.occurred_start) <= _as_aware(now) <= _as_aware(end)
+        )
+
 
 class EventMemoryStore:
     """SQLite-backed canonical event timeline with independently decaying details."""
@@ -150,8 +161,7 @@ class EventMemoryStore:
 
     def _init_db(self) -> None:
         with self._connect() as connection:
-            connection.executescript(
-                """
+            connection.executescript("""
                 CREATE TABLE IF NOT EXISTS events (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -209,8 +219,7 @@ class EventMemoryStore:
                     FOREIGN KEY(source_event_id) REFERENCES events(id) ON DELETE CASCADE,
                     FOREIGN KEY(target_event_id) REFERENCES events(id) ON DELETE CASCADE
                 );
-                """
-            )
+                """)
 
     @staticmethod
     def _dt(value: str | None) -> datetime | None:
@@ -220,7 +229,9 @@ class EventMemoryStore:
     def _iso(value: datetime | None) -> str | None:
         return _as_aware(value).isoformat() if value is not None else None
 
-    def _details(self, connection: sqlite3.Connection, event_id: str) -> list[EventDetail]:
+    def _details(
+        self, connection: sqlite3.Connection, event_id: str
+    ) -> list[EventDetail]:
         rows = connection.execute(
             "SELECT * FROM event_details WHERE event_id = ? ORDER BY salience DESC, detail_key",
             (event_id,),
@@ -298,7 +309,9 @@ class EventMemoryStore:
 
     def get(self, event_id: str) -> EventRecord | None:
         with self._connect() as connection:
-            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
             return self._record(connection, row) if row is not None else None
 
     def upsert_candidate(
@@ -325,6 +338,21 @@ class EventMemoryStore:
             )
             old_refs = json.loads(existing["source_refs"] or "[]") if existing else []
             source_refs = list(dict.fromkeys([*old_refs, source_ref]))[-20:]
+            if existing is not None and (
+                source_ref in old_refs
+                or current < _as_aware(datetime.fromisoformat(existing["updated_at"]))
+            ):
+                # A retried older message must not undo a newer completion/correction.
+                connection.execute(
+                    "UPDATE events SET source_refs=? WHERE id=?",
+                    (json.dumps(source_refs, ensure_ascii=False), event_id),
+                )
+                return self._record(
+                    connection,
+                    connection.execute(
+                        "SELECT * FROM events WHERE id=?", (event_id,)
+                    ).fetchone(),
+                )
             time_precision = candidate.time_precision.value
             if (
                 existing is not None
@@ -430,10 +458,16 @@ class EventMemoryStore:
                 )
             for relation in relation_candidates:
                 target = connection.execute(
-                    "SELECT id FROM events WHERE user_id = ? AND agent_id = ? AND event_key = ?",
+                    "SELECT id, updated_at FROM events WHERE user_id = ? AND agent_id = ? AND event_key = ?",
                     (user_id, agent_id, relation.target_event_key),
                 ).fetchone()
                 if target is None or target["id"] == event_id:
+                    continue
+                if (
+                    relation.relation is EventRelationType.corrects
+                    and current
+                    < _as_aware(datetime.fromisoformat(target["updated_at"]))
+                ):
                     continue
                 connection.execute(
                     """
@@ -441,7 +475,12 @@ class EventMemoryStore:
                         (source_event_id, target_event_id, relation, created_at)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (event_id, target["id"], relation.relation.value, current.isoformat()),
+                    (
+                        event_id,
+                        target["id"],
+                        relation.relation.value,
+                        current.isoformat(),
+                    ),
                 )
                 if relation.relation is EventRelationType.corrects:
                     connection.execute(
@@ -449,7 +488,9 @@ class EventMemoryStore:
                         (event_id, current.isoformat(), target["id"]),
                     )
 
-            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
             if row is None:
                 raise RuntimeError("event upsert did not produce a row")
             return self._record(connection, row)
@@ -500,15 +541,72 @@ class EventMemoryStore:
             SELECT * FROM events
             WHERE user_id = ? AND agent_id = ? AND superseded_by IS NULL
               AND status IN ('planned', 'in_progress')
-              AND (current_until IS NULL OR current_until >= ?)
+              AND occurred_start IS NOT NULL AND julianday(occurred_start) <= julianday(?)
+              AND COALESCE(current_until,occurred_end) IS NOT NULL
+              AND julianday(COALESCE(current_until,occurred_end)) >= julianday(?)
             ORDER BY COALESCE(occurred_start, updated_at) DESC
             LIMIT ?
         """
         with self._connect() as connection:
             rows = connection.execute(
-                sql, (user_id, agent_id, current, max(1, min(limit, 100)))
+                sql, (user_id, agent_id, current, current, max(1, min(limit, 100)))
             ).fetchall()
             return [self._record(connection, row) for row in rows]
+
+    @staticmethod
+    def terms(text):
+        words = set(re.findall(r"[a-z0-9_]{2,}", text.lower()))
+        for part in re.findall(r"[\u4e00-\u9fff]+", text):
+            words.update(part[i : i + 2] for i in range(len(part) - 1))
+        return words - {
+            "今天",
+            "明天",
+            "用户",
+            "现在",
+            "自己",
+            "表示",
+            "已经",
+            "这个",
+            "那个",
+            "应该",
+        }
+
+    def recall(self, user_id, agent_id="default", *, query="", now=None, limit=12):
+        now = now or _utcnow()
+        # Candidate retrieval by update avoids future plans hiding recent corrections.
+        with self._connect() as c:
+            rows = c.execute(
+                "SELECT * FROM events WHERE user_id=? AND agent_id=? AND superseded_by IS NULL ORDER BY updated_at DESC LIMIT 300",
+                (user_id, agent_id),
+            ).fetchall()
+            events = [self._record(c, r) for r in rows]
+        terms = self.terms(query or "")
+
+        def relevance(e):
+            body = " ".join(
+                [e.event_key, e.title, e.core_summary, *[d.content for d in e.details]]
+            )
+            return len(terms & self.terms(body))
+
+        related = sorted(
+            [e for e in events if relevance(e)],
+            key=lambda e: (relevance(e), e.updated_at),
+            reverse=True,
+        )
+        protected = [
+            e
+            for e in events
+            if any(d.protected for d in e.details)
+            and (_as_aware(now) - _as_aware(e.updated_at)).days < 7
+        ]
+        active = [e for e in events if e.active_at(now)]
+        chosen = []
+        for e in [*related[: max(1, limit // 2)], *protected[:2], *active[:3], *events]:
+            if e.id not in {x.id for x in chosen}:
+                chosen.append(e)
+            if len(chosen) >= limit:
+                break
+        return chosen
 
     @staticmethod
     def detail_strength(
@@ -569,7 +667,9 @@ class EventMemoryStore:
                     confidence=float(row["confidence"]),
                     protected=bool(row["protected"]),
                     observed_at=datetime.fromisoformat(row["observed_at"]),
-                    last_reinforced_at=datetime.fromisoformat(row["last_reinforced_at"]),
+                    last_reinforced_at=datetime.fromisoformat(
+                        row["last_reinforced_at"]
+                    ),
                     forgotten_at=None,
                 )
                 strength = self.detail_strength(
@@ -642,7 +742,9 @@ class EventMemoryStore:
                     event_ids,
                 )
             for earlier, later in zip(rows, rows[1:]):
-                earlier_end = self._dt(earlier["occurred_end"] or earlier["occurred_start"])
+                earlier_end = self._dt(
+                    earlier["occurred_end"] or earlier["occurred_start"]
+                )
                 later_start = self._dt(later["occurred_start"])
                 if earlier_end is None or later_start is None:
                     continue
@@ -667,6 +769,13 @@ class EventMemoryStore:
 
     def delete_user(self, user_id: str, agent_id: str = "default") -> None:
         with self._connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='event_jobs'"
+            ).fetchone():
+                connection.execute(
+                    "DELETE FROM event_jobs WHERE user_id=? AND agent_id=?",
+                    (user_id, agent_id),
+                )
             connection.execute(
                 "DELETE FROM events WHERE user_id = ? AND agent_id = ?",
                 (user_id, agent_id),

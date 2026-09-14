@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.agent.situation import EVIDENCE_RULES, is_correction
+from app.agent.structured import structured_json
 
 import asyncio
 import hashlib
@@ -55,7 +57,6 @@ from app.services.observation_service import ObservationService
 from app.services.presence_service import PresenceService
 from app.services.session_service import SessionService
 from app.services.timezone_store import resolve_zoneinfo
-
 
 PROACTIVE_SYSTEM_PROMPT = (
     "You are Auri, a proactive personal agent. First infer what the user may be "
@@ -118,14 +119,14 @@ PROFILE_SYSTEM_PROMPT = (
     "- profile fields: ask exactly one question to fill it. Ask for the user's "
     "name (how to address them) before introducing capabilities.\n"
     "- guide items: guide the user to complete one concrete action. State "
-    "clearly what to do and point to the action (for example, \"点击下方按钮授权\"). "
+    'clearly what to do and point to the action (for example, "点击下方按钮授权"). '
     "Keep each guide short and actionable. If the provided Xiaomi status says "
     "the user is already connected, do not ask them to connect again. "
     "For capability_intro, write naturally rather than listing features; for "
-    "example: \"我会主动关心你的健康、作息和重要安排，在合适的时候轻轻提醒你。"
-    "你可以像和朋友聊天一样跟我说话，我会慢慢了解你。\"\n\n"
+    'example: "我会主动关心你的健康、作息和重要安排，在合适的时候轻轻提醒你。'
+    '你可以像和朋友聊天一样跟我说话，我会慢慢了解你。"\n\n'
     "During onboarding you are the guide: introduce yourself and lead the user "
-    "through setup. Do not ask open-ended questions such as \"有什么我可以帮你的吗\". "
+    'through setup. Do not ask open-ended questions such as "有什么我可以帮你的吗". '
     "Never ask for the user's country or city. Return only JSON with keys slot "
     "and message."
 )
@@ -149,15 +150,9 @@ GUIDE_MESSAGES: dict[str, str] = {
         "开启主动服务后，我会在合适的时候主动关心你，比如天气变化、健康提醒。"
         "生成主动消息会按实际模型用量扣除 Credits。"
     ),
-    "notification": (
-        "开启通知后，我才能在需要时及时提醒你，不会错过重要的事情。"
-    ),
-    "location": (
-        "开启位置后，我能更贴心地根据你所在的地方，提供天气和生活提醒。"
-    ),
-    "autostart": (
-        "开启自启动后，我才能稳定地在后台持续关心你。"
-    ),
+    "notification": ("开启通知后，我才能在需要时及时提醒你，不会错过重要的事情。"),
+    "location": ("开启位置后，我能更贴心地根据你所在的地方，提供天气和生活提醒。"),
+    "autostart": ("开启自启动后，我才能稳定地在后台持续关心你。"),
 }
 
 
@@ -187,20 +182,13 @@ DAILY_CATEGORIES: tuple[ProactiveCategory, ...] = (
 
 
 CATEGORY_GUIDANCE: dict[ProactiveCategory, str] = {
-    ProactiveCategory.health_insight:
-        "健康洞察：基于健康数据指出一个趋势或异常，并温和解释。",
-    ProactiveCategory.health_care:
-        "健康关怀：睡眠差、久坐、活动量低等场景下的轻柔提醒或关心。",
-    ProactiveCategory.weather:
-        "天气环境：结合天气变化给出对用户有影响的提醒（出门、运动、睡眠）。",
-    ProactiveCategory.explore:
-        "探索新话题：提出一个用户之前没聊过的、开放的新话题，用问句开启。",
-    ProactiveCategory.goal_reminder:
-        "目标提醒：结合用户目标或前瞻意图，给出一个温和的推进提醒。",
-    ProactiveCategory.memory_recall:
-        "记忆回访：回访用户长期记忆里的生日、偏好、重要日期或之前提过的事。",
-    ProactiveCategory.trending:
-        "热点分享：把一条真实的当日热点事件像朋友聊天一样分享给用户。",
+    ProactiveCategory.health_insight: "健康洞察：基于健康数据指出一个趋势或异常，并温和解释。",
+    ProactiveCategory.health_care: "健康关怀：睡眠差、久坐、活动量低等场景下的轻柔提醒或关心。",
+    ProactiveCategory.weather: "天气环境：结合天气变化给出对用户有影响的提醒（出门、运动、睡眠）。",
+    ProactiveCategory.explore: "探索新话题：提出一个用户之前没聊过的、开放的新话题，用问句开启。",
+    ProactiveCategory.goal_reminder: "目标提醒：结合用户目标或前瞻意图，给出一个温和的推进提醒。",
+    ProactiveCategory.memory_recall: "记忆回访：回访用户长期记忆里的生日、偏好、重要日期或之前提过的事。",
+    ProactiveCategory.trending: "热点分享：把一条真实的当日热点事件像朋友聊天一样分享给用户。",
 }
 
 
@@ -318,9 +306,7 @@ class ProactiveEngine:
         for user_id, agent_id in await self.session_service.list_users():
             wake_due = bool(
                 self.sleep_context
-                and self.sleep_context.has_due_followup(
-                    user_id, agent_id, now=now
-                )
+                and self.sleep_context.has_due_followup(user_id, agent_id, now=now)
             )
             if not wake_due and not self._is_daily_due(user_id, agent_id, now):
                 self._audit_gate(user_id, agent_id, "time", "blocked", "not_due")
@@ -375,9 +361,7 @@ class ProactiveEngine:
     ) -> ProactiveDecision | None:
         """Opportunistically start onboarding when a new user comes online."""
         if not self.settings.proactive_enabled:
-            self._audit_gate(
-                user_id, agent_id, "event", "blocked", "global_disabled"
-            )
+            self._audit_gate(user_id, agent_id, "event", "blocked", "global_disabled")
             return None
         if self.is_dense_onboarding(user_id, agent_id):
             return await self.evaluate_onboarding(user_id, agent_id, TriggerType.event)
@@ -418,7 +402,9 @@ class ProactiveEngine:
     ) -> ProactiveDecision | None:
         """Evaluate the onboarding profile loop for a cold-start user."""
         async with self._lock_for(user_id, agent_id):
-            return await self._evaluate_onboarding_locked(user_id, agent_id, trigger_type)
+            return await self._evaluate_onboarding_locked(
+                user_id, agent_id, trigger_type
+            )
 
     async def _evaluate_user_locked(
         self,
@@ -442,7 +428,9 @@ class ProactiveEngine:
 
         # A user message that Auri has accepted but not yet settled owns the
         # conversational turn. Do not interleave an unrelated proactive note.
-        if self.has_pending_chat is not None and self.has_pending_chat(user_id, agent_id):
+        if self.has_pending_chat is not None and self.has_pending_chat(
+            user_id, agent_id
+        ):
             self._audit_gate(
                 user_id, agent_id, trigger_source, "blocked", "pending_chat"
             )
@@ -457,9 +445,7 @@ class ProactiveEngine:
         sleep_gate = self._sleep_gate(user_id, agent_id)
         if sleep_gate.blocked:
             if self.sleep_context is not None:
-                self.sleep_context.defer(
-                    user_id, agent_id, trigger_source, sleep_gate
-                )
+                self.sleep_context.defer(user_id, agent_id, trigger_source, sleep_gate)
             self._audit_gate(
                 user_id,
                 agent_id,
@@ -524,7 +510,9 @@ class ProactiveEngine:
     ) -> ProactiveDecision | None:
         self._settle_expired_onboarding_slots(user_id, agent_id)
         self._reconcile_onboarding_guides(user_id, agent_id)
-        if self.has_pending_chat is not None and self.has_pending_chat(user_id, agent_id):
+        if self.has_pending_chat is not None and self.has_pending_chat(
+            user_id, agent_id
+        ):
             return None
         phase = self.profile_store.phase(user_id, agent_id)
         if phase == "dense":
@@ -532,9 +520,7 @@ class ProactiveEngine:
                 user_id, agent_id, trigger_type
             )
         if phase == "slow":
-            return await self._evaluate_slow_onboarding(
-                user_id, agent_id, trigger_type
-            )
+            return await self._evaluate_slow_onboarding(user_id, agent_id, trigger_type)
         return None
 
     async def current_phase(
@@ -742,7 +728,9 @@ class ProactiveEngine:
         if self._xiaomi_bound(user_id):
             self.profile_store.mark_slot_completed(user_id, agent_id, "xiaomi_connect")
         if self.settings_store.is_enabled(user_id, agent_id):
-            self.profile_store.mark_slot_completed(user_id, agent_id, "proactive_enable")
+            self.profile_store.mark_slot_completed(
+                user_id, agent_id, "proactive_enable"
+            )
         if self.presence.device_tokens(user_id, agent_id):
             self.profile_store.mark_slot_completed(user_id, agent_id, "notification")
         if self.presence.location(user_id, agent_id) is not None:
@@ -804,9 +792,7 @@ class ProactiveEngine:
         if "routine" in profile_open:
             inferred_routine = self._infer_routine_from_health(user_id)
             if inferred_routine is not None:
-                self.profile_store.mark_slot_completed(
-                    user_id, agent_id, "routine"
-                )
+                self.profile_store.mark_slot_completed(user_id, agent_id, "routine")
                 decision = ProactiveDecision(
                     user_id=user_id,
                     agent_id=agent_id,
@@ -829,10 +815,9 @@ class ProactiveEngine:
                 return decision
 
         if profile_open:
-            first_contact = (
-                self.profile_store.onboarding_state(user_id, agent_id)[1] == 0
-                and not self.profile_store.completed_slots(user_id, agent_id)
-            )
+            first_contact = self.profile_store.onboarding_state(user_id, agent_id)[
+                1
+            ] == 0 and not self.profile_store.completed_slots(user_id, agent_id)
             plan = await self._plan_onboarding(
                 user_id,
                 agent_id,
@@ -913,9 +898,7 @@ class ProactiveEngine:
         sleep_gate = self._sleep_gate(user_id, agent_id)
         if sleep_gate.blocked:
             if self.sleep_context is not None:
-                self.sleep_context.defer(
-                    user_id, agent_id, "onboarding", sleep_gate
-                )
+                self.sleep_context.defer(user_id, agent_id, "onboarding", sleep_gate)
             self._audit_gate(
                 user_id,
                 agent_id,
@@ -951,9 +934,7 @@ class ProactiveEngine:
         if not profile_open and not guide_open:
             self._transition_onboarding_phase(user_id, agent_id)
             if self.sleep_context is not None and sleep_gate.wake_followup_due:
-                self.sleep_context.consume(
-                    user_id, agent_id, sleep_gate, sent=False
-                )
+                self.sleep_context.consume(user_id, agent_id, sleep_gate, sent=False)
             return None
 
         if profile_open:
@@ -985,9 +966,7 @@ class ProactiveEngine:
             await self._deliver_and_persist(decision)
             self.onboarding_pacing_store.record_sent(user_id, agent_id)
             if self.sleep_context is not None and sleep_gate.wake_followup_due:
-                self.sleep_context.consume(
-                    user_id, agent_id, sleep_gate, sent=True
-                )
+                self.sleep_context.consume(user_id, agent_id, sleep_gate, sent=True)
             return decision
 
         if guide_open:
@@ -1022,9 +1001,7 @@ class ProactiveEngine:
             await self._deliver_and_persist(decision)
             self.onboarding_pacing_store.record_sent(user_id, agent_id)
             if self.sleep_context is not None and sleep_gate.wake_followup_due:
-                self.sleep_context.consume(
-                    user_id, agent_id, sleep_gate, sent=True
-                )
+                self.sleep_context.consume(user_id, agent_id, sleep_gate, sent=True)
             return decision
 
         return None
@@ -1068,11 +1045,11 @@ class ProactiveEngine:
                 if slot not in GUIDE_SLOTS or slot in completed:
                     continue
                 if slot == "xiaomi_connect" and self._xiaomi_bound(user_id):
-                    self.profile_store.mark_slot_completed(
-                        user_id, agent_id, slot
-                    )
+                    self.profile_store.mark_slot_completed(user_id, agent_id, slot)
                     continue
-                if is_dense and (slot in pending or slot in skipped or slot in deferred):
+                if is_dense and (
+                    slot in pending or slot in skipped or slot in deferred
+                ):
                     continue
                 if not is_dense and not self.profile_store.deferred_revisit_allowed(
                     user_id,
@@ -1166,8 +1143,7 @@ class ProactiveEngine:
 
         if (
             situation_snapshot is not None
-            and situation_snapshot.interruptibility
-            is Interruptibility.do_not_interrupt
+            and situation_snapshot.interruptibility is Interruptibility.do_not_interrupt
         ):
             reason = (
                 "；".join(situation_snapshot.interruptibility_reasons)
@@ -1403,23 +1379,13 @@ class ProactiveEngine:
             return
         if preference == "turn_off":
             self.settings_store.set_enabled(user_id, agent_id, False)
-            self._audit_gate(
-                user_id, agent_id, "chat", "preference", "turn_off"
-            )
+            self._audit_gate(user_id, agent_id, "chat", "preference", "turn_off")
         elif preference in {"want_more", "want_less"}:
-            self.pacing_store.apply_preference(
-                user_id, agent_id, preference=preference
-            )
-            self._audit_gate(
-                user_id, agent_id, "chat", "preference", preference
-            )
+            self.pacing_store.apply_preference(user_id, agent_id, preference=preference)
+            self._audit_gate(user_id, agent_id, "chat", "preference", preference)
         elif preference == "quiet_today":
-            local_now = datetime.now(
-                resolve_zoneinfo(self._user_timezone(user_id))
-            )
-            quiet_until = local_now.replace(
-                hour=8, minute=0, second=0, microsecond=0
-            )
+            local_now = datetime.now(resolve_zoneinfo(self._user_timezone(user_id)))
+            quiet_until = local_now.replace(hour=8, minute=0, second=0, microsecond=0)
             if quiet_until <= local_now:
                 quiet_until += timedelta(days=1)
             self.pacing_store.set_temporary_quiet(
@@ -1432,9 +1398,7 @@ class ProactiveEngine:
             )
 
         if proactive_id:
-            await self.record_reply(
-                user_id, agent_id, proactive_id, user_message
-            )
+            await self.record_reply(user_id, agent_id, proactive_id, user_message)
             return
 
         since = _utcnow() - timedelta(
@@ -1452,6 +1416,8 @@ class ProactiveEngine:
 
     @staticmethod
     def _relationship_preference(user_message: str) -> str | None:
+        if is_correction(user_message):
+            return "continuity_error"
         text = re.sub(r"\s+", "", user_message or "")
         if any(
             phrase in text
@@ -1573,9 +1539,7 @@ class ProactiveEngine:
                         user_message,
                     )
                 if answered:
-                    self.profile_store.mark_slot_completed(
-                        user_id, agent_id, slot
-                    )
+                    self.profile_store.mark_slot_completed(user_id, agent_id, slot)
                     self._mark_replied(decision, user_id, agent_id)
                 return
 
@@ -1608,9 +1572,7 @@ class ProactiveEngine:
                 user_id, agent_id, decision.category.value
             )
         if decision.insight_key:
-            self.told_store.mark_replied(
-                decision.insight_key, user_id, agent_id
-            )
+            self.told_store.mark_replied(decision.insight_key, user_id, agent_id)
         if decision.phase is ProactivePhase.daily:
             self.pacing_store.record_reply(
                 user_id,
@@ -1637,8 +1599,7 @@ class ProactiveEngine:
             {
                 "role": "user",
                 "content": (
-                    f"Profile field: {slot}\n"
-                    f"User message:\n{user_message}"
+                    f"Profile field: {slot}\n" f"User message:\n{user_message}"
                 ),
             },
         ]
@@ -1723,10 +1684,7 @@ class ProactiveEngine:
         cooldown_seconds = self.settings.proactive_onboarding_cooldown_seconds
         if self.profile_store.phase(user_id, agent_id) == "slow":
             cooldown_seconds = self.settings.proactive_onboarding_slow_cooldown_seconds
-        return (
-            (_utcnow() - last).total_seconds()
-            < cooldown_seconds
-        )
+        return (_utcnow() - last).total_seconds() < cooldown_seconds
 
     def _pending_slot_expired(
         self,
@@ -1762,9 +1720,7 @@ class ProactiveEngine:
         message = payload.get("force_proactive_message")
         if not isinstance(message, str) or not message.strip():
             return None
-        insight_key = str(
-            payload.get("force_proactive_insight_key") or "forced_test"
-        )
+        insight_key = str(payload.get("force_proactive_insight_key") or "forced_test")
         category_raw = payload.get("force_proactive_category")
         try:
             category = (
@@ -1877,10 +1833,7 @@ class ProactiveEngine:
         else:
             try:
                 current = datetime.now(
-                    ZoneInfo(
-                        timezone_name
-                        or self.settings.proactive_quiet_hours_tz
-                    )
+                    ZoneInfo(timezone_name or self.settings.proactive_quiet_hours_tz)
                 )
             except ZoneInfoNotFoundError:
                 current = datetime.now()
@@ -1905,7 +1858,9 @@ class ProactiveEngine:
         latest = max(entry.told_at for entry in told)
         if latest.tzinfo is None:
             latest = latest.replace(tzinfo=timezone.utc)
-        return (_utcnow() - latest).total_seconds() < self.settings.proactive_cooldown_seconds
+        return (
+            _utcnow() - latest
+        ).total_seconds() < self.settings.proactive_cooldown_seconds
 
     def _is_pacing_blocked(self, user_id: str, agent_id: str) -> bool:
         """Decide whether another daily message is due under adaptive pacing."""
@@ -1922,9 +1877,9 @@ class ProactiveEngine:
             self.pacing_store.clear_expired_quiet(user_id, agent_id, now=now)
             state = self.pacing_store.get_state(user_id, agent_id) or state
         miss_weight = float(state.get("miss_weight") or 0.0)
-        if state.get("mode") != "resting" and miss_weight >= self._effective_max_unreplied(
-            state
-        ):
+        if state.get(
+            "mode"
+        ) != "resting" and miss_weight >= self._effective_max_unreplied(state):
             self.pacing_store.enter_resting(user_id, agent_id, now=now)
             state = self.pacing_store.get_state(user_id, agent_id) or state
         if state.get("mode") == "resting":
@@ -1958,9 +1913,7 @@ class ProactiveEngine:
         for _decision, weight in self.store.settle_expired(
             user_id, agent_id, before=before
         ):
-            self.pacing_store.record_settlement(
-                user_id, agent_id, miss_weight=weight
-            )
+            self.pacing_store.record_settlement(user_id, agent_id, miss_weight=weight)
             if weight > 0:
                 state = self.pacing_store.get_state(user_id, agent_id) or {}
                 if state.get("mode") == "resting":
@@ -2002,7 +1955,9 @@ class ProactiveEngine:
         if streak > 0:
             last_sent_at = self._parse_timestamp(state.get("last_sent_at"))
             if last_sent_at is not None:
-                silent_seconds = self.settings.proactive_onboarding_pacing_silent_seconds
+                silent_seconds = (
+                    self.settings.proactive_onboarding_pacing_silent_seconds
+                )
                 return (_utcnow() - last_sent_at).total_seconds() >= silent_seconds
         return False
 
@@ -2018,7 +1973,10 @@ class ProactiveEngine:
         effective = base * (
             float(self.settings.proactive_pacing_backoff_growth) ** miss_weight
         )
-        return min(effective, float(self.settings.proactive_pacing_max_effective_cooldown_seconds))
+        return min(
+            effective,
+            float(self.settings.proactive_pacing_max_effective_cooldown_seconds),
+        )
 
     def _effective_max_unreplied(self, state: dict[str, Any]) -> int:
         """Adaptive hard cap: responsive users tolerate more unanswered notes."""
@@ -2056,7 +2014,10 @@ class ProactiveEngine:
 
     def _probably_asleep(self, user_id: str, agent_id: str) -> bool | None:
         """Return True/False when fresh sleep-stage data is decisive, else None."""
-        if not self.settings.proactive_sleep_detection_enabled or self.health_store is None:
+        if (
+            not self.settings.proactive_sleep_detection_enabled
+            or self.health_store is None
+        ):
             return None
         sample = self.health_store.latest_sample(user_id, "SLEEP_STAGE")
         if sample is None or sample.bucket_start is None or sample.value1 is None:
@@ -2109,9 +2070,7 @@ class ProactiveEngine:
             self.sleep_context is not None
             and self.settings.proactive_personal_sleep_enabled
         ):
-            decision = self.sleep_context.evaluate(
-                user_id, agent_id, live_stage=asleep
-            )
+            decision = self.sleep_context.evaluate(user_id, agent_id, live_stage=asleep)
             if decision.source != "fixed_window_fallback":
                 return decision
             if not fallback_quiet_hours or asleep is False:
@@ -2236,9 +2195,7 @@ class ProactiveEngine:
         pending = self.profile_store.pending_slots(user_id, agent_id)
         skipped = self.profile_store.skipped_slots(user_id, agent_id)
         deferred = self.profile_store.deferred_slots(user_id, agent_id)
-        conversation_text = await self._recent_conversation_text(
-            user_id, agent_id
-        )
+        conversation_text = await self._recent_conversation_text(user_id, agent_id)
         messages = [
             {"role": "system", "content": PROFILE_SYSTEM_PROMPT},
             {
@@ -2352,9 +2309,7 @@ class ProactiveEngine:
             url = str(getattr(item, "url", "") or "")
             trending_lines.append(f"- {title}\n  {snippet}\n  {url}")
         trending_text = "\n".join(trending_lines) or "（无）"
-        trigger_text = TRIGGER_SOURCE_DESCRIPTION.get(
-            trigger_source, trigger_source
-        )
+        trigger_text = TRIGGER_SOURCE_DESCRIPTION.get(trigger_source, trigger_source)
         pacing_state = self.pacing_store.get_state(scope.user_id, scope.agent_id) or {}
         direct_outstanding, interactive_outstanding = self.store.outstanding_counts(
             scope.user_id, scope.agent_id
@@ -2508,6 +2463,9 @@ class ProactiveEngine:
                 ProactiveCategory.explore,
                 ProactiveCategory.memory_recall,
                 ProactiveCategory.goal_reminder,
+                ProactiveCategory.health_insight,
+                ProactiveCategory.health_care,
+                ProactiveCategory.weather,
             }
         )
 
@@ -2533,11 +2491,14 @@ class ProactiveEngine:
         selected = [
             signal
             for signal in snapshot.signals
-            if signal.source in {"conversation", "event_memory"}
+            if signal.source
+            in {"conversation", "event_memory", "health", "schedule", "time", "weather"}
         ]
         lines: list[str] = []
-        for signal in selected[-32:]:
-            observed = signal.observed_at.isoformat() if signal.observed_at else "unknown"
+        for signal in selected:
+            observed = (
+                signal.observed_at.isoformat() if signal.observed_at else "unknown"
+            )
             lines.append(
                 f"[{signal.id}] {signal.source}/{signal.kind} "
                 f"observed_at={observed} freshness={signal.freshness.value} "
@@ -2571,15 +2532,16 @@ class ProactiveEngine:
             scope.user_id,
             scope.agent_id,
         )
-        if (
-            decision.conversation_intent is not ConversationIntent.share
-            and (recent_error_refs or hold_active)
+        if decision.conversation_intent is not ConversationIntent.share and (
+            recent_error_refs or hold_active
         ):
             decision.should_message = False
             decision.message = None
             decision.push_message = None
             decision.continuity_status = "blocked_recent_error"
-            decision.continuity_reason = "用户近期指出过对话连续性错误，暂缓新的互动式提问"
+            decision.continuity_reason = (
+                "用户近期指出过对话连续性错误，暂缓新的互动式提问"
+            )
             decision.continuity_refs = recent_error_refs
             decision.silence_reason = decision.continuity_reason
             return
@@ -2598,6 +2560,7 @@ class ProactiveEngine:
             for entry in [*memory_snapshot.memory, *memory_snapshot.user]
         ]
         prompt = (
+            EVIDENCE_RULES + "\n" + situation_snapshot.context_text() + "\n"
             f"DRAFT_CATEGORY: {decision.category.value if decision.category else 'unknown'}\n"
             f"DRAFT_TOPIC_KEY: {decision.topic_key or decision.insight_key or 'unknown'}\n"
             f"DRAFT_INTENT: {decision.conversation_intent.value}\n"
@@ -2605,23 +2568,22 @@ class ProactiveEngine:
             f"DRAFT_PUSH_MESSAGE: {decision.push_message or ''}\n\n"
             "RECENT_CONTINUITY_CONTEXT:\n"
             f"{self._continuity_context_text(situation_snapshot)}\n\n"
-            "DURABLE_MEMORY:\n"
-            + ("\n".join(memory_lines) or "No durable memory.")
+            "DURABLE_MEMORY:\n" + ("\n".join(memory_lines) or "No durable memory.")
         )
         try:
             with token_context(
                 kind="proactive_continuity_check",
                 user_id=scope.user_id,
             ):
-                response = await self.llm.complete(
+                data = await structured_json(
+                    self.llm,
                     [
                         {"role": "system", "content": CONTINUITY_CHECK_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    tools=None,
                     max_tokens=self.settings.proactive_continuity_check_max_tokens,
+                    validate=lambda d: d.get("verdict") in {"safe", "rewrite", "block"},
                 )
-            data = self._extract_json(response.content)
         except Exception:
             data = None
 
@@ -2734,9 +2696,7 @@ class ProactiveEngine:
 
         message = str(data.get("message") or "").strip()
         push_message = str(data.get("push_message") or "").strip() or None
-        category = ProactiveEngine._coerce_category(
-            data.get("category"), candidates
-        )
+        category = ProactiveEngine._coerce_category(data.get("category"), candidates)
         conversation_intent = ProactiveEngine._coerce_conversation_intent(
             data.get("conversation_intent")
         )
@@ -2750,11 +2710,14 @@ class ProactiveEngine:
         summary = str(data.get("situation_summary") or "").strip() or None
         decision_reason = str(data.get("decision_reason") or "").strip() or None
         silence_reason = str(data.get("silence_reason") or "").strip() or None
-        topic_key = re.sub(
-            r"[^a-zA-Z0-9_:-]+",
-            "_",
-            str(data.get("topic_key") or "").strip(),
-        ).strip("_") or None
+        topic_key = (
+            re.sub(
+                r"[^a-zA-Z0-9_:-]+",
+                "_",
+                str(data.get("topic_key") or "").strip(),
+            ).strip("_")
+            or None
+        )
         try:
             confidence = float(data.get("situation_confidence"))
         except (TypeError, ValueError):
@@ -2771,10 +2734,7 @@ class ProactiveEngine:
         if situation_snapshot is not None:
             valid_ids = situation_snapshot.evidence_ids()
             evidence_refs = [item for item in evidence_refs if item in valid_ids]
-            if (
-                situation_snapshot.interruptibility
-                is Interruptibility.do_not_interrupt
-            ):
+            if situation_snapshot.interruptibility is Interruptibility.do_not_interrupt:
                 should_message = False
                 silence_reason = silence_reason or "当前情境不适合打扰"
 
@@ -2821,9 +2781,7 @@ class ProactiveEngine:
             push_message = None
 
         insight_key = (
-            ProactiveEngine._derive_insight_key(category, message)
-            if message
-            else None
+            ProactiveEngine._derive_insight_key(category, message) if message else None
         )
         return {
             "should_message": should_message,

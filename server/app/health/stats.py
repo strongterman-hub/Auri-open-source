@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.health.evidence import HEALTH_MEANING
 
 from collections import defaultdict
 from typing import Any
@@ -79,6 +80,7 @@ def summary(
 
     return {
         "from_day": from_day,
+        "data_meaning": HEALTH_MEANING,
         "to_day": to_day,
         "metrics": metrics_out,
         "highlights": highlights,
@@ -107,6 +109,7 @@ def trend(
     ]
     return {
         "metric_type": metric_type,
+        "data_meaning": HEALTH_MEANING,
         "from_day": from_day,
         "to_day": to_day,
         "series": series,
@@ -138,8 +141,19 @@ def compare(
 
     return {
         "metric_type": metric_type,
-        "a": {"from_day": a_from, "to_day": a_to, "days": len(a_entries), "stats": a_stats},
-        "b": {"from_day": b_from, "to_day": b_to, "days": len(b_entries), "stats": b_stats},
+        "data_meaning": HEALTH_MEANING,
+        "a": {
+            "from_day": a_from,
+            "to_day": a_to,
+            "days": len(a_entries),
+            "stats": a_stats,
+        },
+        "b": {
+            "from_day": b_from,
+            "to_day": b_to,
+            "days": len(b_entries),
+            "stats": b_stats,
+        },
         "delta_avg": delta_avg,
         "delta_pct": delta_pct,
     }

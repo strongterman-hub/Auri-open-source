@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-
 logger = logging.getLogger("auri.tokens")
 
 _kind: ContextVar[str] = ContextVar("auri_token_kind", default="chat")
@@ -104,6 +103,11 @@ class TokenLogger:
             "duration_ms": round(duration_ms, 2) if duration_ms is not None else None,
             **breakdown,
         }
+        if usage:
+            record["finish_reason"] = usage.get("finish_reason")
+            record["reasoning_tokens"] = (
+                usage.get("completion_tokens_details") or {}
+            ).get("reasoning_tokens")
 
         if self.path is not None:
             try:

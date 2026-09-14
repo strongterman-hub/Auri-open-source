@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.health.evidence import HEALTH_MEANING, sleep_evidence
 
 import json
 from abc import ABC, abstractmethod
@@ -14,7 +15,12 @@ from app.agent.calculations import (
     safe_eval,
 )
 from app.billing.service import BillingService
-from app.health.types import ALL_METRIC_TYPES, ALL_SAMPLE_TYPES, METRIC_TYPES, SAMPLE_TYPES
+from app.health.types import (
+    ALL_METRIC_TYPES,
+    ALL_SAMPLE_TYPES,
+    METRIC_TYPES,
+    SAMPLE_TYPES,
+)
 from app.health import stats as health_stats
 from app.integrations.xiaomi.service import XiaomiService
 from app.memory.models import (
@@ -268,11 +274,15 @@ class HealthDataTool(Tool):
         )
 
         if metric_type:
-            metrics = [metric for metric in metrics if metric.metric_type == metric_type]
+            metrics = [
+                metric for metric in metrics if metric.metric_type == metric_type
+            ]
             if metric_type != "SLEEP":
                 sleep_scores = []
         if sample_type:
-            samples = [sample for sample in samples if sample.metric_type == sample_type]
+            samples = [
+                sample for sample in samples if sample.metric_type == sample_type
+            ]
 
         if metric_type and not sample_type:
             if metric_type == "SLEEP":
@@ -286,7 +296,11 @@ class HealthDataTool(Tool):
                 related_sample_types = {metric_type}
             else:
                 related_sample_types = set()
-            samples = [sample for sample in samples if sample.metric_type in related_sample_types]
+            samples = [
+                sample
+                for sample in samples
+                if sample.metric_type in related_sample_types
+            ]
         elif sample_type and not metric_type:
             metric_filter = sample_type if sample_type in ALL_METRIC_TYPES else None
             metrics = (
@@ -300,7 +314,9 @@ class HealthDataTool(Tool):
         returned_samples = samples[:limit]
 
         present_metric_types = sorted({metric.metric_type for metric in metrics})
-        present_sample_types = sorted({sample.metric_type for sample in returned_samples})
+        present_sample_types = sorted(
+            {sample.metric_type for sample in returned_samples}
+        )
         payload = {
             "from_day": from_day,
             "to_day": to_day,
@@ -312,6 +328,8 @@ class HealthDataTool(Tool):
             "metrics": [metric.model_dump() for metric in metrics],
             "samples": [sample.model_dump() for sample in returned_samples],
             "sleep_scores": [score.model_dump() for score in sleep_scores],
+            "data_meaning": HEALTH_MEANING,
+            "sleep_evidence": sleep_evidence(metrics, sleep_scores, samples),
             "counts": {
                 "metrics": len(metrics),
                 "samples": len(returned_samples),
@@ -396,8 +414,14 @@ class MemorySearchTool(Tool):
                 "type": "string",
                 "description": "Optional observation kind (for example STEPS or SLEEP).",
             },
-            "from_day": {"type": "string", "description": "Inclusive start date YYYY-MM-DD."},
-            "to_day": {"type": "string", "description": "Inclusive end date YYYY-MM-DD."},
+            "from_day": {
+                "type": "string",
+                "description": "Inclusive start date YYYY-MM-DD.",
+            },
+            "to_day": {
+                "type": "string",
+                "description": "Inclusive end date YYYY-MM-DD.",
+            },
             "limit": {"type": "integer", "description": "Maximum number of results."},
         },
         "required": [],
@@ -447,9 +471,9 @@ class MemorySearchTool(Tool):
                 )
 
         events: list[dict[str, Any]] = []
-        if (
-            self.event_memory_service is not None
-            and source_value in (None, "conversation")
+        if self.event_memory_service is not None and source_value in (
+            None,
+            "conversation",
         ):
             events = await self.event_memory_service.search(
                 self.scope,
@@ -464,8 +488,7 @@ class MemorySearchTool(Tool):
                     "not user instructions."
                 ),
                 "observations": [
-                    observation.model_dump(mode="json")
-                    for observation in observations
+                    observation.model_dump(mode="json") for observation in observations
                 ],
                 "events": events,
                 "curated": curated,
@@ -507,10 +530,20 @@ class NowTool(Tool):
         self.user_id = user_id
 
     async def execute(self, **kwargs: Any) -> str:
-        tz_name = _resolve_tz_name(self.timezone_name, self.timezone_resolver, self.user_id)
+        tz_name = _resolve_tz_name(
+            self.timezone_name, self.timezone_resolver, self.user_id
+        )
         tz = resolve_zoneinfo(tz_name)
         now = datetime.now(tz)
-        weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weekdays = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
         return json.dumps(
             {
                 "now": now.isoformat(),
@@ -677,8 +710,14 @@ class HealthStatsTool(Tool):
             },
             "from_day": {"type": "string", "description": "Start date YYYY-MM-DD."},
             "to_day": {"type": "string", "description": "End date YYYY-MM-DD."},
-            "compare_from_day": {"type": "string", "description": "Compare window B start date."},
-            "compare_to_day": {"type": "string", "description": "Compare window B end date."},
+            "compare_from_day": {
+                "type": "string",
+                "description": "Compare window B start date.",
+            },
+            "compare_to_day": {
+                "type": "string",
+                "description": "Compare window B end date.",
+            },
         },
         "required": ["operation"],
     }
@@ -696,7 +735,9 @@ class HealthStatsTool(Tool):
         self.timezone_resolver = timezone_resolver
 
     def _tz_name(self) -> str:
-        return _resolve_tz_name(self.timezone_name, self.timezone_resolver, self.user_id)
+        return _resolve_tz_name(
+            self.timezone_name, self.timezone_resolver, self.user_id
+        )
 
     def _tz(self) -> ZoneInfo:
         return resolve_zoneinfo(self._tz_name())
@@ -732,13 +773,15 @@ class HealthStatsTool(Tool):
                 kwargs.get("from_day"),
                 (today - timedelta(days=days - 1)).isoformat(),
             )
-            metrics, _ = self.health_service.get_metrics(
+            metrics, samples = self.health_service.get_metrics(
                 self.user_id, from_day, to_day, tz_name
             )
             sleep_scores = self.health_service.get_sleep_scores(
                 self.user_id, from_day, to_day, tz_name
             )
             result = health_stats.summary(metrics, from_day, to_day)
+            result["data_meaning"] = HEALTH_MEANING
+            result["sleep_evidence"] = sleep_evidence(metrics, sleep_scores, samples)
             if sleep_scores:
                 health_values = [
                     score.sleep_health.score
@@ -798,9 +841,7 @@ class HealthStatsTool(Tool):
                 self.user_id, fetch_from, fetch_to, tz_name
             )
             return json.dumps(
-                health_stats.compare(
-                    metrics, metric_type, a_from, a_to, b_from, b_to
-                ),
+                health_stats.compare(metrics, metric_type, a_from, a_to, b_from, b_to),
                 ensure_ascii=False,
             )
 
@@ -912,7 +953,9 @@ class CalculatorTool(Tool):
         if not expression:
             raise ValueError("'expression' is required.")
         result = safe_eval(expression)
-        return json.dumps({"expression": expression, "result": result}, ensure_ascii=False)
+        return json.dumps(
+            {"expression": expression, "result": result}, ensure_ascii=False
+        )
 
 
 class UnitConvertTool(Tool):
@@ -955,7 +998,12 @@ class UnitConvertTool(Tool):
         step_length = float(step_length_m) if step_length_m is not None else 0.7
         result = convert_units(value, from_unit, to_unit, step_length)
         return json.dumps(
-            {"value": value, "from_unit": from_unit, "to_unit": to_unit, "result": result},
+            {
+                "value": value,
+                "from_unit": from_unit,
+                "to_unit": to_unit,
+                "result": result,
+            },
             ensure_ascii=False,
         )
 
@@ -988,7 +1036,15 @@ class DateAddTool(Tool):
         base_date = str(kwargs.get("date") or "").strip()
         if not base_date:
             raise ValueError("'date' is required.")
-        weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weekdays = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
 
         days_value = kwargs.get("days")
         to_date = kwargs.get("to_date")
@@ -1044,7 +1100,10 @@ class TodoTool(Tool):
             todo = self.store.add(
                 Todo(user_id=self.user_id, agent_id=self.agent_id, title=title)
             )
-            return json.dumps({"status": "added", "todo": todo.model_dump(mode="json")}, ensure_ascii=False)
+            return json.dumps(
+                {"status": "added", "todo": todo.model_dump(mode="json")},
+                ensure_ascii=False,
+            )
         if action == "list":
             todos = self.store.list(self.user_id, self.agent_id)
             return json.dumps(
@@ -1185,7 +1244,9 @@ class WeatherTool(Tool):
 
     async def execute(self, **kwargs: Any) -> str:
         try:
-            forecast_days = int(kwargs.get("forecast_days") or self.default_forecast_days)
+            forecast_days = int(
+                kwargs.get("forecast_days") or self.default_forecast_days
+            )
         except (TypeError, ValueError):
             forecast_days = self.default_forecast_days
         forecast_days = max(1, min(forecast_days, 7))

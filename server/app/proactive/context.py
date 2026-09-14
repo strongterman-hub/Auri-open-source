@@ -15,6 +15,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from app.memory.events import EventStatus
+from app.agent.situation import EVIDENCE_RULES, is_correction
+from app.health.evidence import HEALTH_MEANING, sleep_evidence
 from app.memory.models import MemoryScope
 from app.observation.models import ObservationSource
 from app.reminders.store import ReminderStore
@@ -40,7 +42,9 @@ def _parse_time(value: Any) -> datetime | None:
         except ValueError:
             return None
     if isinstance(value, (int, float)) and value > 0:
-        seconds = float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
+        seconds = (
+            float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
+        )
         try:
             return datetime.fromtimestamp(seconds, tz=timezone.utc)
         except (OSError, OverflowError, ValueError):
@@ -94,6 +98,7 @@ class SituationSnapshot(BaseModel):
 
     def context_text(self) -> str:
         lines = [
+            EVIDENCE_RULES,
             f"snapshot_id={self.id}",
             f"generated_at={self.generated_at.isoformat()}",
             f"timezone={self.timezone}",
@@ -105,7 +110,9 @@ class SituationSnapshot(BaseModel):
             "Signals (each bracketed id is a valid evidence_ref):",
         ]
         for signal in self.signals:
-            observed = signal.observed_at.isoformat() if signal.observed_at else "unknown"
+            observed = (
+                signal.observed_at.isoformat() if signal.observed_at else "unknown"
+            )
             age = (
                 str(round(signal.age_seconds))
                 if signal.age_seconds is not None
@@ -293,6 +300,7 @@ class ProactiveContextBuilder:
         weather_timeout_seconds: float = 3.0,
         max_signals: int = 48,
         schedule_service=None,
+        sleep_score_store=None,
     ) -> None:
         self.session_service = session_service
         self.schedule_service = schedule_service
@@ -302,6 +310,7 @@ class ProactiveContextBuilder:
         self.todo_store = todo_store
         self.pacing_store = pacing_store
         self.health_store = health_store
+        self.sleep_score_store = sleep_score_store
         self.weather_service = weather_service
         self.event_memory_service = event_memory_service
         self.timezone_resolver = timezone_resolver
@@ -319,7 +328,9 @@ class ProactiveContextBuilder:
         self.health_stale_seconds = health_stale_seconds
         self.weather_timeout_seconds = weather_timeout_seconds
         self.max_signals = max(8, max_signals)
-        self._weather_cache: dict[str, tuple[datetime, float, float, dict[str, Any], str]] = {}
+        self._weather_cache: dict[
+            str, tuple[datetime, float, float, dict[str, Any], str]
+        ] = {}
 
     def _timezone(self, user_id: str) -> str:
         if self.timezone_resolver is not None:
@@ -523,9 +534,7 @@ class ProactiveContextBuilder:
             )
 
         by_id = {
-            str(message.get("id")): message
-            for message in messages
-            if message.get("id")
+            str(message.get("id")): message for message in messages if message.get("id")
         }
         cutoff = now - timedelta(hours=self.conversation_continuity_hours)
         user_indexes = [
@@ -579,23 +588,42 @@ class ProactiveContextBuilder:
                     confidence=1.0,
                 )
             )
+        # Independent quota for prior assistant questions AND recent health
+        # statements: unanswered questions and repeated sync facts remain visible.
+        questions, statements = [], []
+        for message in reversed(messages):
+            at = _parse_time(message.get("timestamp"))
+            if message.get("role") != "assistant" or at is None or at < cutoff:
+                continue
+            text = self._message_text(message.get("content"))
+            item = {"id": message.get("id"), "at": at.isoformat(), "text": text[:700]}
+            if ("?" in text or "？" in text) and len(questions) < 12:
+                questions.append(item)
+            elif (
+                any(w in text for w in ("睡", "步", "心率", "骑行", "运动", "同步"))
+                and len(statements) < 8
+            ):
+                statements.append(item)
+        if questions or statements:
+            signals.insert(
+                0,
+                self._signal(
+                    evidence_id="conversation_prior_topics",
+                    source="conversation",
+                    kind="prior_questions_and_claims",
+                    value={"questions": questions, "statements": statements},
+                    observed_at=now,
+                    now=now,
+                    fresh_seconds=1800,
+                    stale_seconds=259200,
+                    confidence=1.0,
+                ),
+            )
         return signals
 
     @staticmethod
     def _is_continuity_error(text: str) -> bool:
-        compact = re.sub(r"\s+", "", text or "")
-        return any(
-            marker in compact
-            for marker in (
-                "你失忆了",
-                "刚说过",
-                "不是刚说过",
-                "已经告诉你",
-                "不是告诉你",
-                "怎么又问",
-                "又问一遍",
-            )
-        )
+        return is_correction(text)
 
     @staticmethod
     def _message_text(content: Any) -> str:
@@ -617,7 +645,24 @@ class ProactiveContextBuilder:
     ) -> list[SituationSignal]:
         if self.event_memory_service is None:
             return []
-        events = await self.event_memory_service.search(scope, limit=12)
+        sessions = await self.session_service.list_by_user(scope.user_id)
+        active = [
+            s for s in sessions if s.agent_id == scope.agent_id and s.end_reason is None
+        ]
+        recent = max(active, key=lambda s: s.updated_at).messages[-6:] if active else []
+        query = " ".join(self._message_text(m.get("content")) for m in recent)
+        if hasattr(self.event_memory_service, "store"):
+            records = await asyncio.to_thread(
+                self.event_memory_service.store.recall,
+                scope.user_id,
+                scope.agent_id,
+                query=query,
+                now=now,
+                limit=12,
+            )
+            events = [r.model_dump(mode="json") for r in records]
+        else:
+            events = await self.event_memory_service.search(scope, limit=12)
         signals: list[SituationSignal] = []
         for event in events:
             status = str(event.get("status") or "")
@@ -625,11 +670,15 @@ class ProactiveContextBuilder:
             occurred_end = _parse_time(event.get("occurred_end"))
             current_until = _parse_time(event.get("current_until"))
             active_until = current_until or occurred_end
-            active_now = status in {
-                EventStatus.planned.value,
-                EventStatus.in_progress.value,
-            } and occurred_start is not None and occurred_start <= now and (
-                active_until is not None and active_until >= now
+            active_now = (
+                status
+                in {
+                    EventStatus.planned.value,
+                    EventStatus.in_progress.value,
+                }
+                and occurred_start is not None
+                and occurred_start <= now
+                and (active_until is not None and active_until >= now)
             )
             observed = occurred_start or _parse_time(event.get("updated_at"))
             event_key = str(event.get("event_key") or event.get("id") or "event")
@@ -649,6 +698,13 @@ class ProactiveContextBuilder:
                         "current_until": event.get("current_until"),
                         "summary": str(event.get("core_summary") or "")[:1000],
                         "location": event.get("location"),
+                        "details": [
+                            d["content"]
+                            for d in event.get("details", [])
+                            if not d.get("forgotten_at")
+                        ][:4],
+                        "relations": event.get("relations", [])[:6],
+                        "sources": event.get("source_refs", [])[-2:],
                     },
                     observed_at=observed,
                     now=now,
@@ -822,9 +878,7 @@ class ProactiveContextBuilder:
                 if location_source == "device_report"
                 and location_age is not None
                 and location_age <= self.gps_fresh_seconds
-                else 0.65
-                if location_source == "device_report"
-                else 0.5
+                else 0.65 if location_source == "device_report" else 0.5
             ),
         )
 
@@ -846,14 +900,20 @@ class ProactiveContextBuilder:
             sample = self.health_store.latest_sample(scope.user_id, sample_type)
             if sample is None:
                 continue
-            observed = _parse_time(sample.bucket_end) or _parse_time(sample.bucket_start)
+            observed = _parse_time(sample.bucket_end) or _parse_time(
+                sample.bucket_start
+            )
             in_progress = False
             start = _parse_time(sample.bucket_start)
             end = _parse_time(sample.bucket_end)
             if sample_type == "WORKOUT" and start is not None and end is not None:
                 in_progress = start <= now <= end
-            fresh_seconds = 900 if sample_type == "SLEEP_STAGE" else self.health_fresh_seconds
-            stale_seconds = 1800 if sample_type == "SLEEP_STAGE" else self.health_stale_seconds
+            fresh_seconds = (
+                900 if sample_type == "SLEEP_STAGE" else self.health_fresh_seconds
+            )
+            stale_seconds = (
+                1800 if sample_type == "SLEEP_STAGE" else self.health_stale_seconds
+            )
             signals.append(
                 self._signal(
                     evidence_id=f"health_{sample_type.lower()}_latest",
@@ -877,7 +937,7 @@ class ProactiveContextBuilder:
             )
 
         local_day = now.astimezone(resolve_zoneinfo(timezone_name)).date().isoformat()
-        metrics, _ = self.health_store.get_metrics(
+        metrics, samples = self.health_store.get_metrics(
             scope.user_id,
             local_day,
             local_day,
@@ -901,13 +961,27 @@ class ProactiveContextBuilder:
                     source="health",
                     kind="today_metrics",
                     value={
-                        metric.metric_type: {
-                            "day": metric.day,
-                            "value1": metric.value1,
-                            "value2": metric.value2,
-                            "value3": metric.value3,
-                        }
-                        for metric in selected_metrics
+                        **{
+                            metric.metric_type: {
+                                "day": metric.day,
+                                "value1": metric.value1,
+                                "value2": metric.value2,
+                                "value3": metric.value3,
+                            }
+                            for metric in selected_metrics
+                        },
+                        "data_meaning": HEALTH_MEANING,
+                        "sleep_evidence": sleep_evidence(
+                            selected_metrics,
+                            (
+                                self.sleep_score_store.list_scores(
+                                    scope.user_id, local_day, local_day
+                                )
+                                if self.sleep_score_store is not None
+                                else []
+                            ),
+                            samples,
+                        ),
                     },
                     observed_at=observed,
                     now=now,
@@ -1021,22 +1095,47 @@ class ProactiveContextBuilder:
             )
         ]
 
-    def _schedule_signals(self, scope: MemoryScope, now: datetime) -> list[SituationSignal]:
+    def _schedule_signals(
+        self, scope: MemoryScope, now: datetime
+    ) -> list[SituationSignal]:
         if self.schedule_service is None:
             return []
         day = now.astimezone(resolve_zoneinfo(self._timezone(scope.user_id))).date()
         from datetime import timedelta
-        events = self.schedule_service.list(scope.user_id, scope.agent_id, day, day + timedelta(days=2))["events"]
+
+        events = self.schedule_service.list(
+            scope.user_id, scope.agent_id, day, day + timedelta(days=2)
+        )["events"]
         result = []
         for event in events:
-            if event["status"] != "scheduled" or datetime.fromisoformat(event["ends_at"]) <= now:
+            if (
+                event["status"] != "scheduled"
+                or datetime.fromisoformat(event["ends_at"]) <= now
+            ):
                 continue
-            result.append(SituationSignal(
-                id=f"schedule_{event['id']}_{event['occurrence_date']}", source="schedule", kind="planned_event",
-                value={**event, "planned_only": True, "active_now": not event["all_day"] and datetime.fromisoformat(event["starts_at"]) <= now < datetime.fromisoformat(event["ends_at"])},
-                observed_at=now, age_seconds=0, freshness=SignalFreshness.fresh, confidence=1.0,
-            ))
-        return sorted(result, key=lambda item: (not item.value["active_now"], item.value["starts_at"]))[:8]
+            result.append(
+                SituationSignal(
+                    id=f"schedule_{event['id']}_{event['occurrence_date']}",
+                    source="schedule",
+                    kind="planned_event",
+                    value={
+                        **event,
+                        "planned_only": True,
+                        "active_now": not event["all_day"]
+                        and datetime.fromisoformat(event["starts_at"])
+                        <= now
+                        < datetime.fromisoformat(event["ends_at"]),
+                    },
+                    observed_at=now,
+                    age_seconds=0,
+                    freshness=SignalFreshness.fresh,
+                    confidence=1.0,
+                )
+            )
+        return sorted(
+            result,
+            key=lambda item: (not item.value["active_now"], item.value["starts_at"]),
+        )[:8]
 
     def _observation_signals(
         self,
@@ -1089,7 +1188,12 @@ class ProactiveContextBuilder:
             if signal.freshness is SignalFreshness.expired:
                 continue
             if signal.source == "schedule" and signal.value.get("active_now"):
-                low_reasons.append(("日历安排显示此时可能有事，避免无关闲聊；不代表实际正在进行", signal.id))
+                low_reasons.append(
+                    (
+                        "日历安排显示此时可能有事，避免无关闲聊；不代表实际正在进行",
+                        signal.id,
+                    )
+                )
             if signal.source == "health" and signal.kind == "sleep_stage":
                 if signal.freshness is SignalFreshness.fresh:
                     try:
@@ -1139,7 +1243,14 @@ class ProactiveContextBuilder:
             )
             text = str(latest.value.get("text") or "")
             completed_terms = ("忙完", "开完会", "考完", "醒了", "不用等了")
-            busy_terms = ("别打扰", "不要打扰", "我在忙", "正在开会", "在考试", "在开车")
+            busy_terms = (
+                "别打扰",
+                "不要打扰",
+                "我在忙",
+                "正在开会",
+                "在考试",
+                "在开车",
+            )
             if not any(term in text for term in completed_terms) and any(
                 term in text for term in busy_terms
             ):

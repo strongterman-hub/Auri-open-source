@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     # persisted first; a background worker later replies, delays, or intentionally
     # stays silent for a high-confidence conversational closing.
     chat_reply_enabled: bool = True
+    chat_grounding_check_enabled: bool = True
     chat_reply_tick_seconds: float = 0.5
     chat_reply_debounce_seconds: float = 3.0
     chat_reply_planner_model: str | None = None

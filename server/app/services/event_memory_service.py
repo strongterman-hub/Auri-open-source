@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from app.memory.event_extraction import EventExtractor
-from app.memory.events import EventCandidate, EventMemoryStore, EventRecord, EventStatus
+from app.memory.event_jobs import EventJobStore
+from app.agent.situation import is_correction
+from app.memory.events import (
+    EventCandidate,
+    EventDetailCandidate,
+    EventMemoryStore,
+    EventRecord,
+    EventStatus,
+)
 from app.memory.models import MemoryScope, OriginClass
 from app.observation.models import Observation, ObservationSource
 from app.observation.store import ObservationStore
@@ -51,6 +59,12 @@ class EventMemoryService:
         self.current_state_ttl_hours = current_state_ttl_hours
         self.audit_path = Path(audit_path) if audit_path is not None else None
         self._audit_lock = threading.Lock()
+        self.jobs = EventJobStore(store.path)
+        self.session_loader = None
+        self._worker = None
+        self._active_user = None
+        self._processing = None
+        self._deleted_users = set()
         if self.audit_path is not None:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -106,6 +120,7 @@ class EventMemoryService:
         session_id: str,
         message: dict[str, Any],
         conversation_context: list[dict[str, Any]] | None = None,
+        retry_failures: bool = False,
     ) -> list[EventRecord]:
         """Persist the raw owner source first, then best-effort extract structured events."""
         text = self._message_text(message.get("content", ""))
@@ -132,7 +147,32 @@ class EventMemoryService:
             },
             supersession_key=source_ref,
         )
-        await asyncio.to_thread(self.observation_store.add, observation)
+        self.observation_store.add(observation)
+        # Preserve the exact correction even if semantic extraction later fails.
+        if is_correction(text):
+            self.store.upsert_candidate(
+                user_id=scope.user_id,
+                agent_id=scope.agent_id,
+                candidate=EventCandidate(
+                    event_key="correction_"
+                    + hashlib.sha1(source_ref.encode()).hexdigest(),
+                    kind="user_correction",
+                    title="用户纠正",
+                    core_summary="用户纠正原话：" + text[:1400],
+                    occurred_start=message_at,
+                    status=EventStatus.completed,
+                    details=[
+                        EventDetailCandidate(
+                            detail_key="owner_correction",
+                            content=text[:1000],
+                            protected=True,
+                        )
+                    ],
+                ),
+                origin=OriginClass.owner,
+                source_ref=source_ref,
+                now=message_at,
+            )
 
         context_ids = [
             str(item.get("id"))
@@ -149,9 +189,10 @@ class EventMemoryService:
             )
             return []
         recent = await asyncio.to_thread(
-            self.store.query,
+            self.store.recall,
             scope.user_id,
             scope.agent_id,
+            query=text,
             limit=20,
         )
         try:
@@ -185,15 +226,30 @@ class EventMemoryService:
                 status="extractor_error",
                 error_type=type(exc).__name__,
             )
+            if retry_failures:
+                raise ValueError("extractor_error") from exc
             return []
 
         records: list[EventRecord] = []
         failed = 0
         for candidate in candidates:
+            if candidate.updates_event_key:
+                existing = next(
+                    (e for e in recent if e.event_key == candidate.updates_event_key),
+                    None,
+                )
+                if existing is None:
+                    failed += 1
+                    continue
+                candidate = candidate.model_copy(
+                    update={
+                        "event_key": existing.event_key,
+                        "thread_key": existing.thread_key,
+                    }
+                )
             normalized = self._normalize_candidate(candidate, message_at, scope.user_id)
             try:
-                record = await asyncio.to_thread(
-                    self.store.upsert_candidate,
+                record = self.store.upsert_candidate(
                     user_id=scope.user_id,
                     agent_id=scope.agent_id,
                     candidate=normalized,
@@ -201,8 +257,7 @@ class EventMemoryService:
                     source_ref=source_ref,
                     now=message_at,
                 )
-                await asyncio.to_thread(
-                    self.store.refresh_temporal_relations,
+                self.store.refresh_temporal_relations(
                     scope.user_id,
                     scope.agent_id,
                     record.thread_key,
@@ -217,15 +272,99 @@ class EventMemoryService:
             session_id=session_id,
             message_id=message_id,
             context_ids=context_ids,
-            status=(
-                "persist_partial"
-                if failed
-                else extraction_status
-            ),
+            status=("persist_partial" if failed else extraction_status),
             candidate_count=len(candidates),
             persisted_keys=[record.event_key for record in records],
         )
+        if retry_failures and (
+            failed or extraction_status not in {"ok", "no_candidates"}
+        ):
+            raise ValueError("persist_partial" if failed else extraction_status)
         return records
+
+    def enqueue(self, scope, session_id, message):
+        self._deleted_users.discard(scope.user_id)
+        if self.extractor is not None:
+            self.jobs.enqueue(
+                scope.user_id,
+                scope.agent_id,
+                session_id,
+                message["id"],
+                int(is_correction(self._message_text(message.get("content", "")))),
+            )
+
+    async def process_pending(self):
+        if self.session_loader is None or self.extractor is None:
+            return False
+        job = self.jobs.claim()
+        if job is None:
+            return False
+        self._active_user = job["user_id"]
+        try:
+            session = await self.session_loader(job["session_id"])
+            if job["user_id"] in self._deleted_users:
+                return True
+            if session.user_id != job["user_id"] or session.agent_id != job["agent_id"]:
+                raise ValueError("scope_mismatch")
+            index = next(
+                i
+                for i, m in enumerate(session.messages)
+                if m.get("id") == job["message_id"]
+            )
+            self._processing = asyncio.create_task(
+                self.capture_user_message(
+                    MemoryScope(user_id=job["user_id"], agent_id=job["agent_id"]),
+                    session.id,
+                    session.messages[index],
+                    session.messages[max(0, index - 4) : index],
+                    retry_failures=True,
+                )
+            )
+            await self._processing
+            self.jobs.finish(job)
+        except asyncio.CancelledError:
+            self.jobs.finish(job, "interrupted")
+            if job["user_id"] not in self._deleted_users:
+                raise
+        except Exception as exc:
+            self.jobs.finish(job, type(exc).__name__)
+        finally:
+            self._processing = None
+            self._active_user = None
+        return True
+
+    async def start(self):
+        async def run():
+            while True:
+                try:
+                    await self.process_pending()
+                except Exception:
+                    # A temporary SQLite/session error must not kill recovery.
+                    pass
+                await asyncio.sleep(2)
+
+        if self._worker is None:
+            self._worker = asyncio.create_task(run(), name="event-memory-jobs")
+
+    async def stop(self):
+        if self._worker is not None:
+            self._worker.cancel()
+            try:
+                await self._worker
+            except asyncio.CancelledError:
+                pass
+            self._worker = None
+
+    async def cancel_user(self, user_id, agent_id):
+        self._deleted_users.add(user_id)
+        if self._active_user == user_id and self._processing is not None:
+            task = self._processing
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self.jobs.delete_user(user_id, agent_id)
 
     def _audit(
         self,
@@ -269,8 +408,13 @@ class EventMemoryService:
     ) -> EventCandidate:
         data = candidate.model_dump()
         data["timezone"] = candidate.timezone or self._timezone(user_id)
-        if candidate.status is EventStatus.in_progress and candidate.current_until is None:
-            data["current_until"] = message_at + timedelta(hours=self.current_state_ttl_hours)
+        if (
+            candidate.status is EventStatus.in_progress
+            and candidate.current_until is None
+        ):
+            data["current_until"] = message_at + timedelta(
+                hours=self.current_state_ttl_hours
+            )
         return EventCandidate.model_validate(data)
 
     async def build_context(
@@ -300,7 +444,7 @@ class EventMemoryService:
             limit=10,
         )
         recent = await asyncio.to_thread(
-            self.store.query,
+            self.store.recall,
             scope.user_id,
             scope.agent_id,
             query=query,
@@ -327,14 +471,14 @@ class EventMemoryService:
             "- planned is not completed; an expired current state is not the user's present state.",
         ]
         for event in selected:
-            start = event.occurred_start.isoformat() if event.occurred_start else "unknown"
+            start = (
+                event.occurred_start.isoformat() if event.occurred_start else "unknown"
+            )
             end = event.occurred_end.isoformat() if event.occurred_end else "unknown"
             current_until = (
                 event.current_until.isoformat() if event.current_until else "unbounded"
             )
-            active_now = event.status in {EventStatus.planned, EventStatus.in_progress} and (
-                event.current_until is None or _aware(event.current_until) >= current
-            )
+            active_now = event.active_at(current)
             line = (
                 f"- [{start} .. {end}] key={event.event_key} status={event.status.value} "
                 f"active_now={str(active_now).lower()} current_until={current_until} "

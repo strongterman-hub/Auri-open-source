@@ -84,25 +84,19 @@ class AgentService:
         compressor: ContextCompressor | None = None,
         settings: Settings | None = None,
         file_store: FileStore | None = None,
-        proactive_reply_hook: Callable[
-            [str, str, str, str | None], Awaitable[None]
-        ] | None = None,
-        proactive_activity_hook: Callable[
-            [str, str, str, str | None], Awaitable[None]
-        ] | None = None,
+        proactive_reply_hook: (
+            Callable[[str, str, str, str | None], Awaitable[None]] | None
+        ) = None,
+        proactive_activity_hook: (
+            Callable[[str, str, str, str | None], Awaitable[None]] | None
+        ) = None,
         is_onboarding: Callable[[str, str], bool] | None = None,
-        next_onboarding_guide: Callable[
-            [str, str], tuple[str, list[dict]] | None
-        ] | None = None,
-        mark_onboarding_guide_delivered: Callable[
-            [str, str, str], None
-        ] | None = None,
-        dense_onboarding_hook: Callable[
-            [str, str], Awaitable[None]
-        ] | None = None,
-        onboarding_context_provider: Callable[
-            [str, str], str | None
-        ] | None = None,
+        next_onboarding_guide: (
+            Callable[[str, str], tuple[str, list[dict]] | None] | None
+        ) = None,
+        mark_onboarding_guide_delivered: Callable[[str, str, str], None] | None = None,
+        dense_onboarding_hook: Callable[[str, str], Awaitable[None]] | None = None,
+        onboarding_context_provider: Callable[[str, str], str | None] | None = None,
         xiaomi_status_provider: Callable[[str], dict] | None = None,
         timezone_resolver: Callable[[str], str] | None = None,
         event_memory_service: EventMemoryService | None = None,
@@ -164,6 +158,15 @@ class AgentService:
                 None,
             )
             if existing is not None:
+                if (
+                    self.event_memory_service is not None
+                    and self.event_memory_service.session_loader is not None
+                ):
+                    self.event_memory_service.enqueue(
+                        MemoryScope(user_id=current.user_id, agent_id=current.agent_id),
+                        current.id,
+                        existing,
+                    )
                 return current, existing, True
 
         stored_files = await self._store_files(files)
@@ -180,6 +183,15 @@ class AgentService:
                 None,
             )
             if existing is not None:
+                if (
+                    self.event_memory_service is not None
+                    and self.event_memory_service.session_loader is not None
+                ):
+                    self.event_memory_service.enqueue(
+                        MemoryScope(user_id=session.user_id, agent_id=session.agent_id),
+                        session.id,
+                        existing,
+                    )
                 return session, existing, True
 
             session = await self._maybe_reset(session)
@@ -188,20 +200,27 @@ class AgentService:
             user_message = _chat_message("user", user_content)
             user_message["id"] = client_message_id
             proactive_id: str | None = None
-            if previous and previous.get("role") == "assistant" and previous.get("proactive") is True:
+            if (
+                previous
+                and previous.get("role") == "assistant"
+                and previous.get("proactive") is True
+            ):
                 proactive_id = previous.get("id")
                 user_message["replying_to_proactive_id"] = proactive_id
                 if self.is_onboarding is not None:
                     user_message["onboarding_reply"] = bool(
                         self.is_onboarding(scope.user_id, scope.agent_id)
                     )
-            conversation_context = [
-                dict(message) for message in session.messages[-4:]
-            ]
+            conversation_context = [dict(message) for message in session.messages[-4:]]
             session.messages.append(user_message)
             session.touch()
             await self.session_service.save(session)
 
+        if (
+            self.event_memory_service is not None
+            and self.event_memory_service.session_loader is not None
+        ):
+            self.event_memory_service.enqueue(scope, session.id, user_message)
         asyncio.create_task(
             self._after_message_accepted(
                 scope,
@@ -242,7 +261,10 @@ class AgentService:
                 )
             except Exception:
                 pass
-        if self.event_memory_service is not None:
+        if (
+            self.event_memory_service is not None
+            and self.event_memory_service.session_loader is None
+        ):
             try:
                 await self.event_memory_service.capture_user_message(
                     scope,
@@ -277,7 +299,9 @@ class AgentService:
                 None,
             )
             if existing_reply is not None:
-                turn = AgentTurn(text=self._content_text(existing_reply.get("content", "")))
+                turn = AgentTurn(
+                    text=self._content_text(existing_reply.get("content", ""))
+                )
                 scope = MemoryScope(user_id=session.user_id, agent_id=session.agent_id)
                 return turn, scope, session, existing_reply
 
@@ -304,7 +328,13 @@ class AgentService:
         memory_prompt += self._schedule_context(scope)
         if self.event_memory_service is not None:
             try:
-                event_context = await self.event_memory_service.build_context(scope)
+                query = " ".join(
+                    self._content_text(m.get("content", ""))
+                    for m in snapshot_session.messages[-4:]
+                )
+                event_context = await self.event_memory_service.build_context(
+                    scope, query=query
+                )
                 if not event_context.startswith("No structured event memory"):
                     memory_prompt = f"{memory_prompt}\n\n{event_context}"
             except Exception:
@@ -319,7 +349,9 @@ class AgentService:
             llm_history.append({**message, "content": resolved})
 
         batch_messages = [
-            message for message in snapshot_session.messages if message.get("id") in wanted
+            message
+            for message in snapshot_session.messages
+            if message.get("id") in wanted
         ]
         onboarding_mode = bool(
             self.is_onboarding is not None
@@ -399,7 +431,15 @@ class AgentService:
         if self.timezone_resolver is not None:
             tz_name = self.timezone_resolver(user_id) or tz_name
         now = datetime.now(resolve_zoneinfo(tz_name))
-        weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weekdays = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
         return f"{now.isoformat()} ({tz_name}, {weekdays[now.weekday()]})"
 
     async def _prepare_turn(
@@ -433,7 +473,13 @@ class AgentService:
         memory_prompt += self._schedule_context(scope)
         if self.event_memory_service is not None:
             try:
-                event_context = await self.event_memory_service.build_context(scope)
+                query = " ".join(
+                    self._content_text(m.get("content", ""))
+                    for m in session.messages[-4:]
+                )
+                event_context = await self.event_memory_service.build_context(
+                    scope, query=query
+                )
                 if not event_context.startswith("No structured event memory"):
                     memory_prompt = f"{memory_prompt}\n\n{event_context}"
             except Exception:
@@ -454,7 +500,11 @@ class AgentService:
         """Attribute a user reply to the preceding proactive assistant message."""
         previous = session.messages[-1] if session.messages else None
         proactive_id = None
-        if previous and previous.get("role") == "assistant" and previous.get("proactive") is True:
+        if (
+            previous
+            and previous.get("role") == "assistant"
+            and previous.get("proactive") is True
+        ):
             proactive_id = previous.get("id")
         message_text = self._content_text(content)
         if self.proactive_activity_hook is not None:
@@ -627,7 +677,9 @@ class AgentService:
         session.mark_compacted(result.summary, result.cursor, result.generation)
         return session, session.tail_messages(), session.summary
 
-    async def _store_files(self, files: list[FileAttachment] | None) -> list[StoredFile]:
+    async def _store_files(
+        self, files: list[FileAttachment] | None
+    ) -> list[StoredFile]:
         if self.file_store is None or not files:
             return []
 
@@ -662,7 +714,9 @@ class AgentService:
                 name = file_info.get("name", "file")
                 text = await self._file_text(file_info.get("id"))
                 if text:
-                    parts.append({"type": "text", "text": f"[文件内容：{name}]\n{text}"})
+                    parts.append(
+                        {"type": "text", "text": f"[文件内容：{name}]\n{text}"}
+                    )
                 else:
                     parts.append({"type": "text", "text": f"[用户发送了文件：{name}]"})
 
@@ -812,4 +866,6 @@ class AgentService:
                         self.dense_onboarding_hook(scope.user_id, scope.agent_id)
                     )
 
-            yield StreamOutcome(session_id=session.id, reset_notice=session.reset_notice)
+            yield StreamOutcome(
+                session_id=session.id, reset_notice=session.reset_notice
+            )

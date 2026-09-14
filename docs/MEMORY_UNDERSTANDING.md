@@ -1,0 +1,14 @@
+# Memory understanding and correction loop
+
+The server now treats extraction, retrieval, response verification and correction feedback as separate steps.
+
+- Auxiliary DeepSeek extraction/check calls explicitly disable thinking using the [documented API toggle](https://api-docs.deepseek.com/guides/thinking_mode/). Ordinary generation keeps its configured behavior. Finish reasons and available reasoning-token counts are logged without response bodies. Empty/truncated/invalid JSON gets at most one immediate retry.
+- `memory.db/event_jobs` stores account-scoped session/message references. Jobs have leases, correction priority and a three-attempt limit, survive restart, and are cleared on account deletion. Retry cannot replace a newer event state with an older plan. Existing history is not automatically replayed.
+- Context selection combines topic overlap, recent updates, protected corrections and active events. Active states require an actual start and a valid end boundary. Explicit `updates_event_key` links completion to an existing event; similar titles are not automatically merged.
+- Ordinary and proactive generation share timestamped evidence rules. User corrections are available immediately in the current exchange, and detected corrections are preserved as owner statements even if semantic extraction fails.
+- Health output labels daily sleep totals separately from the main episode interval. Naps are reported only from explicit nap samples; a numerical difference alone is not nap evidence. Activity occurrence time is distinct from sync time.
+- Health and weather shares pass the continuity checker. Recent assistant questions and health claims have a separate history quota, including unanswered questions.
+- With `AURI_CHAT_GROUNDING_CHECK_ENABLED=true` (default), factual chat drafts receive a bounded check and can fetch an allowed read-only tool before rewriting. Streaming is buffered until this check finishes. Check failure returns a short uncertainty/correction acknowledgment rather than the unchecked draft. Tool and checker tokens are billed through the existing per-call usage logger; the turn-level main-model token summary remains separate from auxiliary calls.
+- Scheduled reminders can skip redundant wording only when recent owner progress is explicitly linked to that event with a source message. The event remains intact. Ambiguous evidence or unavailable checking preserves the configured reminder.
+
+The first version uses bounded lexical topic matching and explicit correction patterns; it is not a semantic vector index or a guarantee that every implicit correction will be understood. Additional checks can increase reply latency and token use. Unit tests cover truncation, persistent recovery, account isolation/deletion, old retries, sleep semantics, streamed-draft containment, read-only tool restrictions and reminder fallback. Natural user experience still requires observation after deployment.

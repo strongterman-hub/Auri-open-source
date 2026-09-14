@@ -61,6 +61,7 @@ class AccountDeletionService:
         event_store: EventMemoryStore | None = None,
         chat_reply_store: ChatReplyStore | None = None,
         schedule_service=None,
+        event_memory_service=None,
     ) -> None:
         self.auth_store = auth_store
         self.billing_store = billing_store
@@ -88,12 +89,15 @@ class AccountDeletionService:
         self.event_store = event_store
         self.chat_reply_store = chat_reply_store
         self.schedule_service = schedule_service
+        self.event_memory_service = event_memory_service
 
     async def delete_user(
         self,
         user_id: str,
         agent_id: str = "default",
     ) -> None:
+        if self.event_memory_service is not None:
+            await self.event_memory_service.cancel_user(user_id, agent_id)
         sessions = await self.session_service.list_by_user(user_id)
         file_ids: set[str] = set()
         for session in sessions:

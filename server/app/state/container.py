@@ -213,19 +213,25 @@ def create_container(settings: Settings) -> Container:
     event_store = EventMemoryStore(memory_db_path)
     observation_registry = ObservationSourceRegistry()
     observation_registry.register(NullObservationProvider(ObservationSource.schedule))
-    observation_registry.register(NullObservationProvider(ObservationSource.phone_state))
+    observation_registry.register(
+        NullObservationProvider(ObservationSource.phone_state)
+    )
     intent_store = IntentStore(memory_db_path)
     told_store = ToldStore(memory_db_path)
     device_store = DeviceStore(settings.data_dir / "devices" / "devices.db")
     presence_service = PresenceService(device_store=device_store)
     todo_store = TodoStore(settings.data_dir / "todos" / "todos.db")
-    timezone_store = UserTimezoneStore(settings.data_dir / "auth" / "user_timezones.json")
+    timezone_store = UserTimezoneStore(
+        settings.data_dir / "auth" / "user_timezones.json"
+    )
     timezone_resolver = TimezoneResolver(
         timezone_store,
         default_timezone=settings.default_timezone,
     )
     resolve_user_tz = lambda user_id: timezone_resolver.get(user_id)
-    schedule_service = ScheduleService(settings.data_dir / "schedule" / "schedule.db", resolve_user_tz)
+    schedule_service = ScheduleService(
+        settings.data_dir / "schedule" / "schedule.db", resolve_user_tz
+    )
     weather_service = WeatherService(
         observation_service,
         latitude=settings.weather_latitude,
@@ -235,21 +241,15 @@ def create_container(settings: Settings) -> Container:
         min_humidity_delta=settings.weather_min_humidity_delta,
         location_provider=presence_service,
     )
-    proactive_store = ProactiveStore(
-        settings.data_dir / "proactive" / "decisions.db"
-    )
+    proactive_store = ProactiveStore(settings.data_dir / "proactive" / "decisions.db")
     proactive_settings_store = ProactiveSettingsStore(
         settings.data_dir / "proactive" / "proactive.db"
     )
     preference_store = PreferenceStore(
         settings.data_dir / "proactive" / "preferences.db"
     )
-    profile_store = ProfileStore(
-        settings.data_dir / "proactive" / "profile.db"
-    )
-    pacing_store = ProactivePacingStore(
-        settings.data_dir / "proactive" / "pacing.db"
-    )
+    profile_store = ProfileStore(settings.data_dir / "proactive" / "profile.db")
+    pacing_store = ProactivePacingStore(settings.data_dir / "proactive" / "pacing.db")
     onboarding_pacing_store = ProactivePacingStore(
         settings.data_dir / "proactive" / "onboarding_pacing.db"
     )
@@ -262,20 +262,14 @@ def create_container(settings: Settings) -> Container:
         timezone_resolver=resolve_user_tz,
         lookback_days=settings.proactive_personal_sleep_lookback_days,
         min_nights=settings.proactive_personal_sleep_min_nights,
-        confidence_threshold=(
-            settings.proactive_personal_sleep_confidence_threshold
-        ),
+        confidence_threshold=(settings.proactive_personal_sleep_confidence_threshold),
         wake_tail_minutes=settings.proactive_personal_sleep_wake_tail_minutes,
         end_early_tolerance_minutes=(
             settings.proactive_personal_sleep_end_early_tolerance_minutes
         ),
-        end_stability_minutes=(
-            settings.proactive_personal_sleep_end_stability_minutes
-        ),
+        end_stability_minutes=(settings.proactive_personal_sleep_end_stability_minutes),
         max_window_hours=settings.proactive_personal_sleep_max_window_hours,
-        awake_lease_minutes=(
-            settings.proactive_personal_sleep_awake_lease_minutes
-        ),
+        awake_lease_minutes=(settings.proactive_personal_sleep_awake_lease_minutes),
         wake_delivery_cooldown_minutes=(
             settings.proactive_personal_sleep_wake_delivery_cooldown_minutes
         ),
@@ -283,9 +277,7 @@ def create_container(settings: Settings) -> Container:
             settings.proactive_personal_sleep_wake_opportunity_ttl_minutes
         ),
     )
-    reminder_store = ReminderStore(
-        settings.data_dir / "reminders" / "reminders.db"
-    )
+    reminder_store = ReminderStore(settings.data_dir / "reminders" / "reminders.db")
     reminder_service = ReminderService(
         reminder_store,
         timezone=settings.reminder_timezone,
@@ -299,7 +291,9 @@ def create_container(settings: Settings) -> Container:
         cache_seconds=settings.trending_cache_seconds,
     )
 
-    xiaomi_secret_key = resolve_secret_key(settings.xiaomi_secret_key, settings.data_dir)
+    xiaomi_secret_key = resolve_secret_key(
+        settings.xiaomi_secret_key, settings.data_dir
+    )
     xiaomi_credential_store = CredentialStore(
         settings.xiaomi_credential_cache or settings.data_dir / "xiaomi_credentials",
         xiaomi_secret_key,
@@ -311,9 +305,9 @@ def create_container(settings: Settings) -> Container:
         sync_timeout_seconds=settings.xiaomi_sync_timeout_seconds,
         observation_service=observation_service,
         timezone_resolver=timezone_resolver,
-        sleep_score_service=sleep_score_service
-        if settings.sleep_dual_score_enabled
-        else None,
+        sleep_score_service=(
+            sleep_score_service if settings.sleep_dual_score_enabled else None
+        ),
     )
 
     billing_store = BillingStore(
@@ -380,6 +374,7 @@ def create_container(settings: Settings) -> Container:
         audit_path=settings.data_dir / "logs" / "event_memory.jsonl",
     )
     session_service = SessionService(session_store)
+    event_memory_service.session_loader = session_service.get
     chat_reply_store = ChatReplyStore(settings.data_dir / "chat" / "replies.db")
     chat_reply_planner = ChatReplyPlanner(
         llm,
@@ -396,6 +391,7 @@ def create_container(settings: Settings) -> Container:
         pacing_store=pacing_store,
         health_store=health_store,
         weather_service=weather_service if settings.weather_enabled else None,
+        sleep_score_store=sleep_score_store,
         event_memory_service=(
             event_memory_service if settings.event_memory_enabled else None
         ),
@@ -411,16 +407,12 @@ def create_container(settings: Settings) -> Container:
         ),
         conversation_tail_messages=settings.proactive_context_tail_messages,
         conversation_user_exchanges=settings.proactive_context_user_exchanges,
-        conversation_continuity_hours=(
-            settings.proactive_context_continuity_hours
-        ),
+        conversation_continuity_hours=(settings.proactive_context_continuity_hours),
         weather_fresh_seconds=settings.proactive_context_weather_fresh_seconds,
         weather_stale_seconds=settings.proactive_context_weather_stale_seconds,
         health_fresh_seconds=settings.proactive_context_health_fresh_seconds,
         health_stale_seconds=settings.proactive_context_health_stale_seconds,
-        weather_timeout_seconds=(
-            settings.proactive_context_weather_timeout_seconds
-        ),
+        weather_timeout_seconds=(settings.proactive_context_weather_timeout_seconds),
         max_signals=settings.proactive_context_max_signals,
     )
     proactive_audit_logger = ProactiveAuditLogger(
@@ -430,6 +422,7 @@ def create_container(settings: Settings) -> Container:
         settings.data_dir / "logs" / "proactive_gate.jsonl"
     )
     account_deletion_service = AccountDeletionService(
+        event_memory_service=event_memory_service,
         schedule_service=schedule_service,
         auth_store=auth_store,
         billing_store=billing_store,
@@ -461,6 +454,7 @@ def create_container(settings: Settings) -> Container:
         llm,
         turn_logger=turn_logger,
         vision_model=settings.llm_vision_model,
+        grounding_check=settings.chat_grounding_check_enabled,
     )
 
     consolidator = Consolidator(
@@ -476,7 +470,9 @@ def create_container(settings: Settings) -> Container:
         return [
             ScheduleTool(schedule_service, scope.user_id, scope.agent_id),
             CreditsBalanceTool(billing_service=billing_service, user_id=scope.user_id),
-            MemoryTool(memory_service=memory_service, scope=scope, origin=OriginClass.agent),
+            MemoryTool(
+                memory_service=memory_service, scope=scope, origin=OriginClass.agent
+            ),
             MemorySearchTool(
                 observation_service=observation_service,
                 memory_service=memory_service,
@@ -533,12 +529,8 @@ def create_container(settings: Settings) -> Container:
                 fallback_latitude=settings.weather_latitude,
                 fallback_longitude=settings.weather_longitude,
                 default_forecast_days=3,
-                fresh_location_seconds=(
-                    settings.proactive_context_gps_fresh_seconds
-                ),
-                max_location_age_seconds=(
-                    settings.proactive_context_gps_stale_seconds
-                ),
+                fresh_location_seconds=(settings.proactive_context_gps_fresh_seconds),
+                max_location_age_seconds=(settings.proactive_context_gps_stale_seconds),
             ),
             LocationTool(
                 presence=presence_service,
@@ -563,7 +555,11 @@ def create_container(settings: Settings) -> Container:
             tool
             for tool in tool_factory(scope)
             if tool.name in proactive_read_only_tool_names
-        ] + [ScheduleTool(schedule_service, scope.user_id, scope.agent_id, read_only=True)]
+        ] + [
+            ScheduleTool(
+                schedule_service, scope.user_id, scope.agent_id, read_only=True
+            )
+        ]
 
     agent_service = AgentService(
         schedule_service=schedule_service,
@@ -620,9 +616,7 @@ def create_container(settings: Settings) -> Container:
             event_memory_service if settings.event_memory_enabled else None
         ),
         context_builder=(
-            proactive_context_builder
-            if settings.proactive_context_enabled
-            else None
+            proactive_context_builder if settings.proactive_context_enabled else None
         ),
         audit_logger=proactive_audit_logger,
         gate_logger=proactive_gate_logger,
@@ -665,7 +659,13 @@ def create_container(settings: Settings) -> Container:
         tick_seconds=settings.reminder_tick_seconds,
     )
 
-    schedule_scheduler = ScheduleScheduler(schedule_service, proactive_delivery, settings.reminder_tick_seconds)
+    schedule_scheduler = ScheduleScheduler(
+        schedule_service,
+        proactive_delivery,
+        settings.reminder_tick_seconds,
+        llm=llm,
+        session_service=session_service,
+    )
     agent_service.proactive_reply_hook = proactive_engine.record_reply
     agent_service.proactive_activity_hook = proactive_engine.record_user_activity
     agent_service.is_onboarding = proactive_engine.is_dense_onboarding

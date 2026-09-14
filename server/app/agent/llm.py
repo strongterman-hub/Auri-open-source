@@ -24,6 +24,7 @@ class LLMResponse:
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -64,6 +65,10 @@ class LLMClient(ABC):
             usage=response.usage,
             done=True,
         )
+
+    async def complete_structured(self, messages, *, max_tokens=4096):
+        """Auxiliary extraction/checks; compatible with provider-neutral test clients."""
+        return await self.complete(messages, tools=None, max_tokens=max_tokens)
 
 
 class OpenAICompatibleClient(LLMClient):
@@ -107,6 +112,14 @@ class OpenAICompatibleClient(LLMClient):
         max_tokens: int | None = None,
         model: str | None = None,
     ) -> LLMResponse:
+        return await self._complete(messages, tools, max_tokens, model=model)
+
+    async def complete_structured(self, messages, *, max_tokens=4096):
+        return await self._complete(messages, None, max_tokens, structured=True)
+
+    async def _complete(
+        self, messages, tools=None, max_tokens=None, model=None, structured=False
+    ):
         if self.usage_guard is not None:
             self.usage_guard()
         start = time.monotonic()
@@ -119,6 +132,10 @@ class OpenAICompatibleClient(LLMClient):
             payload["tools"] = tools
         if max_tokens:
             payload["max_tokens"] = max_tokens
+        # DeepSeek's documented toggle prevents auxiliary JSON calls spending
+        # their entire output budget on reasoning. Other providers stay neutral.
+        if structured and effective_model.startswith("deepseek-"):
+            payload["thinking"] = {"type": "disabled"}
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -133,10 +150,12 @@ class OpenAICompatibleClient(LLMClient):
             response.raise_for_status()
             data = response.json()
 
+        usage = dict(data.get("usage") or {})
+        usage["finish_reason"] = data["choices"][0].get("finish_reason")
         self._log_usage(
             "complete",
             effective_model,
-            data.get("usage"),
+            usage,
             (time.monotonic() - start) * 1000,
         )
 
@@ -160,7 +179,8 @@ class OpenAICompatibleClient(LLMClient):
         return LLMResponse(
             content=message.get("content") or "",
             tool_calls=tool_calls,
-            usage=data.get("usage") or {},
+            usage=usage,
+            finish_reason=data["choices"][0].get("finish_reason"),
         )
 
     async def stream(
@@ -272,7 +292,11 @@ class EchoClient(LLMClient):
         model: str | None = None,
     ) -> LLMResponse:
         last_user = next(
-            (msg.get("content") for msg in reversed(messages) if msg.get("role") == "user"),
+            (
+                msg.get("content")
+                for msg in reversed(messages)
+                if msg.get("role") == "user"
+            ),
             "",
         )
         return LLMResponse(
