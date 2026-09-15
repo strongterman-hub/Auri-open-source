@@ -421,3 +421,37 @@ class ProactiveStore:
         return sum(
             1 for row in rows if datetime.fromisoformat(row["decided_at"]).date() == today
         )
+
+    def sent_counts_between(
+        self,
+        user_id: str,
+        agent_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, int]:
+        """Return sent-message counts by category in a user-local window.
+
+        The ledger is intentionally small per user; filtering in Python keeps
+        this correct across stored timezone offsets without SQL string tricks.
+        """
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT category, decided_at FROM proactive_decisions
+                WHERE user_id = ? AND agent_id = ? AND should_message = 1
+                """,
+                (user_id, agent_id),
+            ).fetchall()
+        counts: dict[str, int] = {}
+        for row in rows:
+            try:
+                decided = datetime.fromisoformat(row["decided_at"])
+            except (TypeError, ValueError):
+                continue
+            if decided.tzinfo is None:
+                decided = decided.replace(tzinfo=timezone.utc)
+            if start <= decided < end:
+                key = row["category"] or "unknown"
+                counts[key] = counts.get(key, 0) + 1
+        return counts

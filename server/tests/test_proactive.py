@@ -36,6 +36,8 @@ from app.proactive.profile import PROFILE_SLOTS, ProfileStore
 from app.proactive.push import NullPushSender
 from app.proactive.settings import ProactiveSettingsStore
 from app.proactive.sleep_context import SleepGateDecision
+from app.persona.service import PersonaService
+from app.persona.store import PersonaStore
 from app.proactive.store import ProactiveStore
 from app.services.agent_service import AgentService
 from app.services.memory_service import MemoryService
@@ -193,6 +195,7 @@ def _build_engine(
     trending_service=None,
     sleep_context=None,
     continuity_check_enabled: bool = False,
+    persona_service=None,
 ) -> tuple[ProactiveEngine, SessionService, ToldStore, ProactiveStore, PresenceService]:
     settings = Settings(
         data_dir=tmp_dir,
@@ -234,6 +237,7 @@ def _build_engine(
         health_store=health_store,
         trending_service=trending_service,
         sleep_context=sleep_context,
+        persona_service=persona_service,
     )
     return engine, session_service, told_store, store, presence
 
@@ -1847,3 +1851,89 @@ def test_next_onboarding_guide_skips_bound_xiaomi(tmp_dir: Path) -> None:
     slot, actions = guide
     assert slot == "notification"
     assert actions == [{"type": "request_notification", "label": "授权通知"}]
+
+
+def _make_persona_service(tmp_dir: Path, **settings_overrides) -> PersonaService:
+    settings = Settings(
+        data_dir=tmp_dir,
+        proactive_enabled=True,
+        proactive_quiet_hours="",
+        **settings_overrides,
+    )
+    return PersonaService(
+        store=PersonaStore(tmp_dir / "memory.db"),
+        settings=settings,
+    )
+
+
+def _record_sent(
+    engine: ProactiveEngine,
+    category: ProactiveCategory,
+    *,
+    count: int = 1,
+) -> None:
+    now = datetime.now(timezone.utc)
+    for index in range(count):
+        engine.store.add(
+            ProactiveDecision(
+                user_id="u1",
+                agent_id="default",
+                trigger_type=TriggerType.event,
+                trigger_source="test",
+                should_message=True,
+                category=category,
+                decided_at=now,
+                delivery_channel=DeliveryChannel.push,
+            )
+        )
+
+
+def test_persona_category_quota_filters_exhausted_health_categories(tmp_dir: Path) -> None:
+    persona_service = _make_persona_service(tmp_dir)
+    engine, *_ = _build_engine(
+        tmp_dir,
+        '{"category": "explore", "message": "hello"}',
+        persona_service=persona_service,
+    )
+    _record_sent(engine, ProactiveCategory.health_insight, count=3)
+
+    categories = engine._available_categories("u1", "default", "time", [])
+
+    assert ProactiveCategory.health_insight not in categories
+    assert ProactiveCategory.health_care not in categories
+    assert ProactiveCategory.casual_checkin in categories
+    assert ProactiveCategory.self_share in categories
+
+
+def test_persona_quiet_frequency_blocks_daily_evaluation(tmp_dir: Path) -> None:
+    persona_service = _make_persona_service(tmp_dir)
+    scope = MemoryScope(user_id="u1")
+    persona_service.set_user_selection(
+        scope,
+        "calm",
+        {"proactive_frequency_preset": "quiet"},
+    )
+    engine, *_ = _build_engine(
+        tmp_dir,
+        '{"category": "explore", "message": "hello"}',
+        persona_service=persona_service,
+    )
+    _record_sent(engine, ProactiveCategory.explore, count=4)
+
+    result = asyncio.run(
+        engine.evaluate_daily("u1", "default", TriggerType.time)
+    )
+
+    assert result is None
+
+
+def test_persona_active_adds_casual_checkin_and_self_share_categories(tmp_dir: Path) -> None:
+    persona_service = _make_persona_service(tmp_dir)
+    engine, *_ = _build_engine(
+        tmp_dir,
+        '{"category": "casual_checkin", "message": "最近怎么样"}',
+        persona_service=persona_service,
+    )
+    categories = engine._available_categories("u1", "default", "time", [])
+    assert ProactiveCategory.casual_checkin in categories
+    assert ProactiveCategory.self_share in categories

@@ -42,9 +42,9 @@ def test_presence_service_without_store_keeps_memory_fallback(tmp_dir: Path) -> 
     assert presence.device_tokens("u1") == []
 
 
-def test_device_store_persists_only_latest_two_locations(tmp_dir: Path) -> None:
+def test_device_store_keeps_bounded_rolling_location_history(tmp_dir: Path) -> None:
     path = tmp_dir / "devices.db"
-    store = DeviceStore(path)
+    store = DeviceStore(path, location_history_limit=5)
     start = datetime(2026, 9, 3, 4, 0, tzinfo=timezone.utc)
 
     store.update_location("u1", "default", 39.0, 116.0, start)
@@ -55,7 +55,30 @@ def test_device_store_persists_only_latest_two_locations(tmp_dir: Path) -> None:
         "u1", "default", 39.2, 116.2, start + timedelta(minutes=2)
     )
 
-    history = DeviceStore(path).location_history("u1")
+    history = DeviceStore(path, location_history_limit=5).location_history(
+        "u1", limit=5
+    )
+    assert [(item.latitude, item.longitude) for item in history] == [
+        (39.2, 116.2),
+        (39.1, 116.1),
+        (39.0, 116.0),
+    ]
+
+
+def test_device_store_honors_small_location_history_limit(tmp_dir: Path) -> None:
+    path = tmp_dir / "devices.db"
+    store = DeviceStore(path, location_history_limit=2)
+    start = datetime(2026, 9, 3, 4, 0, tzinfo=timezone.utc)
+
+    store.update_location("u1", "default", 39.0, 116.0, start)
+    store.update_location(
+        "u1", "default", 39.1, 116.1, start + timedelta(minutes=1)
+    )
+    store.update_location(
+        "u1", "default", 39.2, 116.2, start + timedelta(minutes=2)
+    )
+
+    history = store.location_history("u1")
     assert [(item.latitude, item.longitude) for item in history] == [
         (39.2, 116.2),
         (39.1, 116.1),

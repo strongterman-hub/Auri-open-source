@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.agent.llm import LLMClient
 from app.agent.response_style import infer_response_style, normalize_response_style
 from app.core.token_logger import token_context
+from app.memory.models import MemoryScope
+from app.persona.models import STYLE_RANK, normalize_style
 
 
 SILENT_EXACT = {
@@ -32,15 +34,6 @@ FAST_MARKERS = (
     "待办",
     "同步",
     "刷新",
-    "健康",
-    "睡眠",
-    "心率",
-    "步数",
-    "天气",
-    "位置",
-    "在哪里",
-    "几点",
-    "什么时候",
     "帮我",
     "查一下",
     "搜索",
@@ -66,6 +59,11 @@ class ReplyPlan:
     lane: str = "fast"
     verbosity: str = "short"
     reason: str = "fallback"
+    allow_question: bool = True
+    max_style: str | None = None
+    policy_reason: str | None = None
+    open_loop_count: int = 0
+    persona_id: str | None = None
 
 
 class ChatReplyPlanner:
@@ -77,10 +75,12 @@ class ChatReplyPlanner:
         *,
         model: str | None = None,
         max_tokens: int = 2048,
+        persona_service: Any = None,
     ) -> None:
         self.llm = llm
         self.model = model
         self.max_tokens = max_tokens
+        self.persona_service = persona_service
 
     @staticmethod
     def _content_text(content: Any) -> str:
@@ -150,12 +150,43 @@ class ChatReplyPlanner:
         allow_silent: bool = True,
         user_id: str | None = None,
         session_id: str | None = None,
+        agent_id: str = "default",
     ) -> ReplyPlan:
+        batch = self.batch_text(messages)
+        has_attachment = any(
+            isinstance(message.get("content"), list)
+            and any(
+                isinstance(part, dict) and part.get("type") in {"image_url", "file"}
+                for part in message.get("content")
+            )
+            for message in messages
+        )
+        policy = None
+        if self.persona_service is not None and user_id:
+            try:
+                scope = MemoryScope(user_id=user_id, agent_id=agent_id)
+                if self.persona_service.is_enabled(scope):
+                    policy = self.persona_service.build_behavior_policy(
+                        scope,
+                        batch,
+                        infer_response_style(batch, has_attachment=has_attachment),
+                        has_attachment=has_attachment,
+                        allow_silent=allow_silent,
+                    )
+            except Exception:
+                policy = None
+        if policy is not None and policy.prefer_silent:
+            return self._with_policy(
+                ReplyPlan("silent", "away", "micro", "persona_low_information"),
+                policy,
+                allow_lane=False,
+            )
+
         deterministic = self.deterministic_plan(messages, allow_silent=allow_silent)
         if deterministic is not None:
-            return deterministic
+            return self._with_policy(deterministic, policy)
 
-        batch = self.batch_text(messages)[:6000]
+        batch = batch[:6000]
         recent = []
         for message in (recent_history or [])[-4:]:
             recent.append(
@@ -182,6 +213,7 @@ class ChatReplyPlanner:
             "user message with a short reply unless completeness or safety requires more. "
             "Do not invent facts.\n\n"
             f"allow_silent={str(allow_silent).lower()}\n"
+            f"persona_policy={json.dumps(policy.model_dump(), ensure_ascii=False) if policy is not None else 'none'}\n"
             f"recent_history={json.dumps(recent, ensure_ascii=False)}\n"
             f"current_batch={batch}"
         )
@@ -212,9 +244,12 @@ class ChatReplyPlanner:
                 outcome = "reply"
             if lane not in {"fast", "normal", "away"}:
                 lane = "fast"
-            return ReplyPlan(outcome, lane, verbosity, reason)
+            return self._with_policy(
+                ReplyPlan(outcome, lane, verbosity, reason),
+                policy,
+            )
         except Exception:
-            return ReplyPlan(
+            fallback = ReplyPlan(
                 "reply",
                 "fast",
                 infer_response_style(
@@ -223,6 +258,37 @@ class ChatReplyPlanner:
                 ),
                 "planner_error_fallback",
             )
+            return self._with_policy(fallback, policy, allow_lane=False)
+
+    @staticmethod
+    def _with_policy(
+        plan: ReplyPlan,
+        policy: Any,
+        *,
+        allow_lane: bool = True,
+    ) -> ReplyPlan:
+        if policy is None:
+            return plan
+        updates: dict[str, Any] = {
+            "allow_question": bool(policy.allow_question),
+            "max_style": policy.max_style,
+            "policy_reason": policy.reason,
+            "open_loop_count": int(policy.open_loop_count or 0),
+            "persona_id": policy.persona_id,
+        }
+        if plan.outcome != "silent":
+            if (
+                allow_lane
+                and policy.lane_hint in {"normal", "away"}
+                and plan.lane == "fast"
+                and plan.reason
+                not in {"question", "attachment", "functional_or_safety_marker", "onboarding_reply"}
+            ):
+                updates["lane"] = policy.lane_hint
+            max_style = normalize_style(getattr(policy, "max_style", None), fallback=plan.verbosity)
+            if STYLE_RANK.get(plan.verbosity, 1) > STYLE_RANK.get(max_style, 1):
+                updates["verbosity"] = max_style
+        return replace(plan, **updates)
 
     @staticmethod
     def _parse_json(content: str) -> dict[str, Any]:

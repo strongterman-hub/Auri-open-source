@@ -50,6 +50,7 @@ from app.proactive.profile import (
 )
 from app.proactive.settings import ProactiveSettingsStore
 from app.proactive.sleep_context import SleepContextController, SleepGateDecision
+from app.persona.models import FREQUENCY_DAILY_LIMITS
 from app.proactive.store import ProactiveStore
 from app.services.memory_service import MemoryService
 from app.services.event_memory_service import EventMemoryService
@@ -171,11 +172,22 @@ REPLY_ASSESSMENT_SYSTEM_PROMPT = (
 )
 
 
+LEGACY_DAILY_CATEGORIES: tuple[ProactiveCategory, ...] = (
+    ProactiveCategory.health_insight,
+    ProactiveCategory.health_care,
+    ProactiveCategory.weather,
+    ProactiveCategory.explore,
+    ProactiveCategory.goal_reminder,
+    ProactiveCategory.memory_recall,
+)
+
 DAILY_CATEGORIES: tuple[ProactiveCategory, ...] = (
     ProactiveCategory.health_insight,
     ProactiveCategory.health_care,
     ProactiveCategory.weather,
     ProactiveCategory.explore,
+    ProactiveCategory.casual_checkin,
+    ProactiveCategory.self_share,
     ProactiveCategory.goal_reminder,
     ProactiveCategory.memory_recall,
 )
@@ -185,7 +197,9 @@ CATEGORY_GUIDANCE: dict[ProactiveCategory, str] = {
     ProactiveCategory.health_insight: "健康洞察：基于健康数据指出一个趋势或异常，并温和解释。",
     ProactiveCategory.health_care: "健康关怀：睡眠差、久坐、活动量低等场景下的轻柔提醒或关心。",
     ProactiveCategory.weather: "天气环境：结合天气变化给出对用户有影响的提醒（出门、运动、睡眠）。",
-    ProactiveCategory.explore: "探索新话题：提出一个用户之前没聊过的、开放的新话题，用问句开启。",
+    ProactiveCategory.explore: "探索新话题：提出一个用户之前没聊过的、开放的新话题，可以用问句，也可以先分享自己的视角。",
+    ProactiveCategory.casual_checkin: "低压问候或话题延续：像朋友一样接住近况、上一话题或轻量回忆，通常不要求回复。",
+    ProactiveCategory.self_share: "自我分享：用一两句分享 Auri 自己的稳定观点、偏好或观察，不要求回复，不编造现实经历。",
     ProactiveCategory.goal_reminder: "目标提醒：结合用户目标或前瞻意图，给出一个温和的推进提醒。",
     ProactiveCategory.memory_recall: "记忆回访：回访用户长期记忆里的生日、偏好、重要日期或之前提过的事。",
     ProactiveCategory.trending: "热点分享：把一条真实的当日热点事件像朋友聊天一样分享给用户。",
@@ -203,6 +217,8 @@ TRIGGER_CATEGORY_BOOST: dict[str, dict[ProactiveCategory, float]] = {
     "weather": {ProactiveCategory.weather: 3.0},
     "time": {
         ProactiveCategory.explore: 1.5,
+        ProactiveCategory.casual_checkin: 1.4,
+        ProactiveCategory.self_share: 1.3,
         ProactiveCategory.memory_recall: 1.2,
     },
     "schedule": {ProactiveCategory.goal_reminder: 2.0},
@@ -259,6 +275,7 @@ class ProactiveEngine:
         gate_logger: ProactiveGateLogger | None = None,
         has_pending_chat: Callable[[str, str], bool] | None = None,
         sleep_context: SleepContextController | None = None,
+        persona_service: Any = None,
     ) -> None:
         self.llm = llm
         self.memory_service = memory_service
@@ -286,6 +303,7 @@ class ProactiveEngine:
         self.gate_logger = gate_logger
         self.has_pending_chat = has_pending_chat
         self.sleep_context = sleep_context
+        self.persona_service = persona_service
         self._user_locks: dict[str, asyncio.Lock] = {}
         self._dense_evaluating: set[str] = set()
 
@@ -1101,6 +1119,21 @@ class ProactiveEngine:
         else:
             decision.engagement_state = EngagementState.chat_persisted
         self.store.add(decision)
+        if (
+            self.persona_service is not None
+            and decision.phase is ProactivePhase.daily
+            and decision.should_message
+            and decision.message
+        ):
+            try:
+                self.persona_service.on_assistant_message(
+                    MemoryScope(user_id=decision.user_id, agent_id=decision.agent_id),
+                    decision.message,
+                    source="proactive",
+                    source_ref=decision.id,
+                )
+            except Exception:
+                pass
 
     async def _evaluate_daily(
         self,
@@ -1112,6 +1145,41 @@ class ProactiveEngine:
         wake_context: str | None = None,
     ) -> ProactiveDecision | None:
         self._settle_daily_opportunities(user_id, agent_id)
+        persona_active = self._persona_active(user_id, agent_id)
+        if persona_active:
+            daily_counts = self._daily_category_counts(user_id, agent_id)
+            daily_limit = self._daily_frequency_limit(user_id, agent_id)
+            if sum(daily_counts.values()) >= daily_limit:
+                self._audit_gate(
+                    user_id,
+                    agent_id,
+                    trigger_source,
+                    "silent",
+                    "daily_frequency_limit",
+                )
+                return None
+            if trigger_source == "health" and self._category_at_quota(
+                ProactiveCategory.health_insight, daily_counts
+            ):
+                self._audit_gate(
+                    user_id,
+                    agent_id,
+                    trigger_source,
+                    "silent",
+                    "category_quota_health",
+                )
+                return None
+            if trigger_source == "weather" and self._category_at_quota(
+                ProactiveCategory.weather, daily_counts
+            ):
+                self._audit_gate(
+                    user_id,
+                    agent_id,
+                    trigger_source,
+                    "silent",
+                    "category_quota_weather",
+                )
+                return None
         if self._is_pacing_blocked(user_id, agent_id):
             self._audit_gate(
                 user_id,
@@ -1224,6 +1292,15 @@ class ProactiveEngine:
         categories = self._available_categories(
             user_id, agent_id, trigger_source, trending_items
         )
+        if persona_active and not categories:
+            self._audit_gate(
+                user_id,
+                agent_id,
+                trigger_source,
+                "silent",
+                "no_category_quota",
+            )
+            return None
         decision_data = await self._decide(
             scope,
             snapshot,
@@ -1643,6 +1720,119 @@ class ProactiveEngine:
             return replied is True
         return False
 
+    def _persona_active(self, user_id: str, agent_id: str) -> bool:
+        if self.persona_service is None:
+            return False
+        try:
+            return bool(
+                self.persona_service.is_enabled(
+                    MemoryScope(user_id=user_id, agent_id=agent_id)
+                )
+            )
+        except Exception:
+            return False
+
+    def _daily_window(self, user_id: str) -> tuple[datetime, datetime]:
+        timezone_name = self._user_timezone(user_id)
+        try:
+            local_zone = resolve_zoneinfo(timezone_name)
+        except Exception:
+            local_zone = timezone.utc
+        now_local = datetime.now(local_zone)
+        start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_local = start_local + timedelta(days=1)
+        return (
+            start_local.astimezone(timezone.utc),
+            end_local.astimezone(timezone.utc),
+        )
+
+    def _daily_category_counts(
+        self,
+        user_id: str,
+        agent_id: str,
+    ) -> dict[str, int]:
+        start, end = self._daily_window(user_id)
+        try:
+            return self.store.sent_counts_between(user_id, agent_id, start, end)
+        except Exception:
+            return {}
+
+    def _category_limit(self, category: ProactiveCategory | None) -> int:
+        limits = {
+            ProactiveCategory.health_insight: self.settings.proactive_health_daily_limit,
+            ProactiveCategory.health_care: self.settings.proactive_health_daily_limit,
+            ProactiveCategory.weather: self.settings.proactive_weather_daily_limit,
+            ProactiveCategory.explore: self.settings.proactive_explore_daily_limit,
+            ProactiveCategory.casual_checkin: (
+                self.settings.proactive_casual_checkin_daily_limit
+            ),
+            ProactiveCategory.self_share: self.settings.proactive_self_share_daily_limit,
+            ProactiveCategory.memory_recall: (
+                self.settings.proactive_memory_recall_daily_limit
+            ),
+            ProactiveCategory.goal_reminder: (
+                self.settings.proactive_goal_reminder_daily_limit
+            ),
+            ProactiveCategory.trending: 2,
+        }
+        return int(limits.get(category, 0)) if category is not None else 0
+
+    def _category_used(
+        self,
+        category: ProactiveCategory | None,
+        counts: dict[str, int],
+    ) -> int:
+        if category in {ProactiveCategory.health_insight, ProactiveCategory.health_care}:
+            return counts.get("health_insight", 0) + counts.get("health_care", 0)
+        if category is None:
+            return 0
+        return counts.get(category.value, 0)
+
+    def _category_at_quota(
+        self,
+        category: ProactiveCategory | None,
+        counts: dict[str, int],
+    ) -> bool:
+        limit = self._category_limit(category)
+        if limit <= 0:
+            return False
+        return self._category_used(category, counts) >= limit
+
+    def _daily_frequency_limit(self, user_id: str, agent_id: str) -> int:
+        if self._persona_active(user_id, agent_id) and self.persona_service is not None:
+            try:
+                return int(
+                    self.persona_service.daily_limit(
+                        MemoryScope(user_id=user_id, agent_id=agent_id)
+                    )
+                )
+            except Exception:
+                pass
+        return int(self.settings.proactive_daily_message_limit)
+
+    def _remaining_category_quotas(
+        self,
+        user_id: str,
+        agent_id: str,
+        categories: list[ProactiveCategory],
+    ) -> dict[str, int]:
+        counts = self._daily_category_counts(user_id, agent_id)
+        remaining: dict[str, int] = {}
+        for category in categories:
+            if category in {
+                ProactiveCategory.health_insight,
+                ProactiveCategory.health_care,
+            }:
+                key = "health"
+                used = self._category_used(category, counts)
+                remaining[key] = max(0, self._category_limit(category) - used)
+            else:
+                key = category.value
+                remaining[key] = max(
+                    0, self._category_limit(category) - counts.get(key, 0)
+                )
+        return remaining
+
     def _available_categories(
         self,
         user_id: str,
@@ -1650,12 +1840,19 @@ class ProactiveEngine:
         trigger_source: str,
         trending_items: list[Any],
     ) -> list[ProactiveCategory]:
-        """Return every daily category the LLM is allowed to pick freely."""
-        pool = list(DAILY_CATEGORIES)
+        """Return categories that still have quota for this user."""
+
+        active = self._persona_active(user_id, agent_id)
+        pool = list(DAILY_CATEGORIES if active else LEGACY_DAILY_CATEGORIES)
         if trending_items and self.settings.trending_enabled:
             pool.append(ProactiveCategory.trending)
-        if not pool:
-            return [ProactiveCategory.health_insight]
+        if active:
+            counts = self._daily_category_counts(user_id, agent_id)
+            pool = [
+                category
+                for category in pool
+                if not self._category_at_quota(category, counts)
+            ]
         return pool
 
     def _eligible_onboarding_slots(
@@ -2196,8 +2393,19 @@ class ProactiveEngine:
         skipped = self.profile_store.skipped_slots(user_id, agent_id)
         deferred = self.profile_store.deferred_slots(user_id, agent_id)
         conversation_text = await self._recent_conversation_text(user_id, agent_id)
+        system_content = PROFILE_SYSTEM_PROMPT
+        if self._persona_active(user_id, agent_id) and self.persona_service is not None:
+            try:
+                persona_prompt = self.persona_service.render_persona_prompt(scope)
+                if persona_prompt:
+                    system_content += "\n\n" + persona_prompt
+                    system_content += (
+                        "\n\nOnboarding 也要保持同一个人格语气；不要让用户感觉在做问卷。"
+                    )
+            except Exception:
+                pass
         messages = [
-            {"role": "system", "content": PROFILE_SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {
                 "role": "user",
                 "content": (
@@ -2323,8 +2531,32 @@ class ProactiveEngine:
             "During resting recovery probes, prefer a low-pressure share or soft_check_in."
         )
         wake_guidance = wake_context or "No deferred wake opportunity."
+        system_content = PROACTIVE_SYSTEM_PROMPT
+        if self._persona_active(scope.user_id, scope.agent_id) and self.persona_service is not None:
+            try:
+                daily_counts = self._daily_category_counts(scope.user_id, scope.agent_id)
+                remaining = self._remaining_category_quotas(
+                    scope.user_id,
+                    scope.agent_id,
+                    candidates,
+                )
+                persona_context = self.persona_service.build_proactive_context(
+                    scope,
+                    daily_count=sum(daily_counts.values()),
+                    remaining=remaining,
+                )
+                for block_name in (
+                    "persona_prompt",
+                    "relationship_prompt",
+                    "behavior_prompt",
+                ):
+                    block = str(persona_context.get(block_name) or "").strip()
+                    if block:
+                        system_content += "\n\n" + block
+            except Exception:
+                pass
         messages = [
-            {"role": "system", "content": PROACTIVE_SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {
                 "role": "user",
                 "content": (
@@ -2461,6 +2693,8 @@ class ProactiveEngine:
             or decision.category
             in {
                 ProactiveCategory.explore,
+                ProactiveCategory.casual_checkin,
+                ProactiveCategory.self_share,
                 ProactiveCategory.memory_recall,
                 ProactiveCategory.goal_reminder,
                 ProactiveCategory.health_insight,

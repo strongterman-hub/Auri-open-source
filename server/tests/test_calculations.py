@@ -51,3 +51,4 @@ def test_date_add_tool() -> None:
         asyncio.run(DateAddTool().execute(date="2026-08-23", days=7))
     )
     assert payload["date"] == "2026-08-30"
+

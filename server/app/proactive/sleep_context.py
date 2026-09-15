@@ -314,7 +314,7 @@ class SleepContextStore:
                 connection.execute(
                     "UPDATE sleep_episodes SET state = 'awake_lease', "
                     "awake_lease_until = ?, wake_followup_pending = 0, "
-                    "wake_followup_consumed_at = COALESCE("
+                    "wake_followup_consumed_at = COALESCE(" 
                     "wake_followup_consumed_at, ?), updated_at = ? "
                     "WHERE user_id = ? AND agent_id = ? AND predicted_start_at <= ? "
                     "AND hard_expire_at > ?",

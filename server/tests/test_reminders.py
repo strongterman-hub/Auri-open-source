@@ -133,3 +133,4 @@ def test_scheduler_fires_event_reminder_once_per_day(tmp_dir: Path) -> None:
     assert asyncio.run(scheduler.tick()) == [reminder.id]
     assert delivery.messages == ["步数偏低"]
     assert asyncio.run(scheduler.tick()) == []
+

@@ -44,3 +44,4 @@ class TrendingService:
             self._cache = []
         self._cached_at = now
         return self._cache
+

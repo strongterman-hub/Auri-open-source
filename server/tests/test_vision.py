@@ -5,7 +5,12 @@ import asyncio
 import pytest
 
 from app.agent.llm import LLMClient, LLMResponse
-from app.agent.runner import AgentRunContext, BasicAgentRunner, _contains_image
+from app.agent.runner import (
+    AgentRunContext,
+    BasicAgentRunner,
+    _contains_image,
+    _llm_history,
+)
 from app.memory.models import MemoryScope
 from app.schemas.agent import SendMessageRequest
 from app.services.agent_service import _build_user_content
@@ -103,5 +108,49 @@ def test_runner_keeps_default_model_without_image() -> None:
     runner = BasicAgentRunner(llm, vision_model="deepseek-v4-flash-vision-exp")
 
     asyncio.run(runner.run(_context([{"role": "user", "content": "hi"}])))
+
+    assert llm.models == [None]
+
+def test_llm_history_strips_historical_images_but_keeps_current_batch() -> None:
+    history = [
+        {
+            "id": "old-image",
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "吃了这个"},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}},
+            ],
+        },
+        {"id": "current-text", "role": "user", "content": "今天怎么样"},
+    ]
+
+    cleaned = _llm_history(history, current_message_ids=["current-text"])
+
+    assert cleaned[0]["content"] == "吃了这个\n[历史图片：1 张，已省略]"
+    assert cleaned[1]["content"] == "今天怎么样"
+
+
+def test_runner_keeps_primary_model_after_historical_image() -> None:
+    llm = RecordingLLM()
+    runner = BasicAgentRunner(llm, vision_model="deepseek-v4-flash-vision-exp")
+    history = [
+        {
+            "id": "old-image",
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}
+            ],
+        },
+        {"id": "current-text", "role": "user", "content": "继续聊"},
+    ]
+    context = AgentRunContext(
+        session_id="s1",
+        scope=MemoryScope(user_id="u1"),
+        history=history,
+        memory_prompt="memory",
+        current_message_ids=["current-text"],
+    )
+
+    asyncio.run(runner.run(context))
 
     assert llm.models == [None]

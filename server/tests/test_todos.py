@@ -30,3 +30,4 @@ def test_todo_tool_add_list_complete(tmp_dir: Path) -> None:
 
     completed = json.loads(asyncio.run(tool.execute(action="complete", id=todo_id)))
     assert completed["completed"] is True
+

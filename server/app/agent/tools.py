@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.health.evidence import HEALTH_MEANING, sleep_evidence
 
 import json
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
@@ -690,7 +691,10 @@ class HealthStatsTool(Tool):
         "total, comparison, or insight (sleep health/recovery scores, steps average, "
         "resting heart rate). "
         "Operations: 'summary' (recent snapshot), 'trend' (day-by-day series for one "
-        "metric), and 'compare' (two date windows for one metric)."
+        "metric), and 'compare' (two date windows for one metric). "
+        "For SLEEP, always inspect sleep_evidence: daily_total_sleep_minutes may "
+        "include multiple episodes (including naps), while main_sleep_episode is the "
+        "overnight episode. Never describe the daily total as last night's sleep."
     )
     parameters = {
         "type": "object",
@@ -817,13 +821,16 @@ class HealthStatsTool(Tool):
                 kwargs.get("from_day"),
                 (today - timedelta(days=days - 1)).isoformat(),
             )
-            metrics, _ = self.health_service.get_metrics(
+            metrics, samples = self.health_service.get_metrics(
                 self.user_id, from_day, to_day, tz_name
             )
-            return json.dumps(
-                health_stats.trend(metrics, metric_type, from_day, to_day),
-                ensure_ascii=False,
-            )
+            result = health_stats.trend(metrics, metric_type, from_day, to_day)
+            if metric_type == "SLEEP":
+                scores = self.health_service.get_sleep_scores(
+                    self.user_id, from_day, to_day, tz_name
+                )
+                result["sleep_evidence"] = sleep_evidence(metrics, scores, samples)
+            return json.dumps(result, ensure_ascii=False)
 
         if operation == "compare":
             metric_type = kwargs.get("metric_type")
@@ -837,13 +844,18 @@ class HealthStatsTool(Tool):
                 raise ValueError("Start date must not be after end date.")
             fetch_from = min(a_from, b_from)
             fetch_to = max(a_to, b_to)
-            metrics, _ = self.health_service.get_metrics(
+            metrics, samples = self.health_service.get_metrics(
                 self.user_id, fetch_from, fetch_to, tz_name
             )
-            return json.dumps(
-                health_stats.compare(metrics, metric_type, a_from, a_to, b_from, b_to),
-                ensure_ascii=False,
+            result = health_stats.compare(
+                metrics, metric_type, a_from, a_to, b_from, b_to
             )
+            if metric_type == "SLEEP":
+                scores = self.health_service.get_sleep_scores(
+                    self.user_id, fetch_from, fetch_to, tz_name
+                )
+                result["sleep_evidence"] = sleep_evidence(metrics, scores, samples)
+            return json.dumps(result, ensure_ascii=False)
 
         raise ValueError(f"Unknown operation '{operation}'.")
 
@@ -1287,17 +1299,22 @@ class WeatherTool(Tool):
 
 
 class LocationTool(Tool):
-    """Return the user's current GPS location, requesting a fresh reading when possible."""
+    """Return the user's current GPS location plus a bounded movement context."""
 
     name = "get_current_location"
     description = (
-        "Return the user's current location: GPS latitude/longitude plus a "
-        "reverse-geocoded city/region/country when available. Use this when the "
-        "user asks where they are, about their current city or area, or anything "
-        "that depends on their present location. When the phone is connected, this "
-        "requests a fresh GPS reading; otherwise it falls back to the last reported "
-        "location. The result includes how long ago the location was reported and "
-        "whether it is stale."
+        "Return the user's current location (GPS latitude/longitude and a "
+        "reverse-geocoded city/region/country when available) plus a bounded "
+        "recent-location summary. Use this when the user asks where they are, "
+        "about their current city or area, what they may be doing now, or "
+        "anything that depends on their present location. When the phone is "
+        "connected, this requests a fresh GPS reading; otherwise it falls back "
+        "to the last reported location. The result includes how long ago the "
+        "latest location was reported, whether it is stale, the reported "
+        "movement classification over the recent window, and recent fixes. "
+        "Movement classification is derived only from GPS points; route, place "
+        "purpose, and origin/destination are unknown unless independently "
+        "confirmed."
     )
     parameters = {
         "type": "object",
@@ -1313,6 +1330,7 @@ class LocationTool(Tool):
         agent_id: str,
         *,
         max_age_seconds: int = 600,
+        max_points: int = 12,
         location_requester: LocationRequester | None = None,
     ) -> None:
         self.presence = presence
@@ -1320,7 +1338,136 @@ class LocationTool(Tool):
         self.user_id = user_id
         self.agent_id = agent_id
         self.max_age_seconds = max_age_seconds
+        self.max_points = max(2, min(int(max_points), 50))
         self.location_requester = location_requester
+
+    @staticmethod
+    def _distance_m(
+        first_lat: float,
+        first_lon: float,
+        second_lat: float,
+        second_lon: float,
+    ) -> float:
+        radius = 6_371_000.0
+        lat1 = math.radians(first_lat)
+        lat2 = math.radians(second_lat)
+        delta_lat = lat2 - lat1
+        delta_lon = math.radians(second_lon - first_lon)
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
+        )
+        return 2 * radius * math.asin(min(1.0, math.sqrt(value)))
+
+    @classmethod
+    def _movement_summary(
+        cls,
+        readings: list[Any],
+        *,
+        window_hours: int = 6,
+    ) -> dict[str, Any]:
+        ordered = sorted(readings, key=lambda item: item.reported_at)
+        if not ordered:
+            return {
+                "classification": "unknown",
+                "reason": "no_location_reports",
+                "points": 0,
+                "rule": "Movement is derived only from recent GPS points.",
+            }
+        latest = ordered[-1]
+        cutoff = latest.reported_at - timedelta(hours=window_hours)
+        window = [item for item in ordered if item.reported_at >= cutoff]
+        if len(window) < 2:
+            return {
+                "classification": "unknown",
+                "reason": "only_one_location_report_in_window",
+                "points": len(window),
+                "window_end": latest.reported_at.isoformat(),
+                "rule": "Movement is derived only from recent GPS points.",
+            }
+
+        total_distance = 0.0
+        moving_seconds = 0.0
+        max_speed = 0.0
+        for first, second in zip(window, window[1:]):
+            elapsed = (second.reported_at - first.reported_at).total_seconds()
+            if elapsed <= 0:
+                continue
+            distance = cls._distance_m(
+                first.latitude,
+                first.longitude,
+                second.latitude,
+                second.longitude,
+            )
+            speed = distance / elapsed
+            total_distance += distance
+            moving_seconds += elapsed
+            max_speed = max(max_speed, speed)
+
+        if moving_seconds <= 0:
+            return {
+                "classification": "unknown",
+                "reason": "invalid_location_timestamps",
+                "points": len(window),
+                "window_end": latest.reported_at.isoformat(),
+                "rule": "Movement is derived only from recent GPS points.",
+            }
+
+        # Conservative thresholds: a slow car in traffic may look like cycling,
+        # so confidence stays moderate and the model must not invent the mode.
+        if max_speed < 0.5 and total_distance < 150:
+            classification = "stationary"
+            confidence = 0.75 if len(window) >= 3 else 0.55
+        elif max_speed <= 2.5:
+            classification = "walking"
+            confidence = 0.65 if len(window) >= 3 else 0.5
+        elif max_speed <= 7.0:
+            classification = "cycling"
+            confidence = 0.65 if len(window) >= 3 else 0.5
+        else:
+            classification = "driving"
+            confidence = 0.75 if len(window) >= 3 else 0.55
+
+        return {
+            "classification": classification,
+            "confidence": confidence,
+            "points": len(window),
+            "window_start": window[0].reported_at.isoformat(),
+            "window_end": latest.reported_at.isoformat(),
+            "window_minutes": round(moving_seconds / 60, 1),
+            "path_distance_m": round(total_distance),
+            "max_speed_mps": round(max_speed, 2),
+            "average_speed_mps": round(total_distance / moving_seconds, 2),
+            "rule": (
+                "Mode is inferred from GPS speed only; route, origin, destination "
+                "and purpose remain unknown unless independently confirmed."
+            ),
+        }
+
+    def _history_for(self, current: Any) -> list[Any]:
+        history = self.presence.location_history(
+            self.user_id,
+            self.agent_id,
+            limit=self.max_points,
+        )
+        if current is None:
+            return history
+        known = {
+            (
+                round(float(item.latitude), 6),
+                round(float(item.longitude), 6),
+                item.reported_at.isoformat(),
+            )
+            for item in history
+        }
+        marker = (
+            round(float(current.latitude), 6),
+            round(float(current.longitude), 6),
+            current.reported_at.isoformat(),
+        )
+        if marker not in known:
+            history.append(current)
+        return history[: self.max_points]
 
     async def execute(self, **kwargs: Any) -> str:
         reading = self.presence.location_reading(self.user_id, self.agent_id)
@@ -1346,7 +1493,12 @@ class LocationTool(Tool):
             )
 
         now = datetime.now(timezone.utc)
-        age_seconds = max(0.0, (now - reading.reported_at).total_seconds())
+        reading_reported_at = (
+            reading.reported_at
+            if reading.reported_at.tzinfo is not None
+            else reading.reported_at.replace(tzinfo=timezone.utc)
+        )
+        age_seconds = max(0.0, (now - reading_reported_at).total_seconds())
         stale = age_seconds > self.max_age_seconds
 
         reverse: dict[str, Any] | None = None
@@ -1364,18 +1516,46 @@ class LocationTool(Tool):
         parts = [part for part in (city, region, country) if part]
         label = "，".join(parts) if parts else None
 
+        history = self._history_for(reading)
+        recent_fixes = [
+            {
+                "latitude": float(item.latitude),
+                "longitude": float(item.longitude),
+                "reported_at": item.reported_at.isoformat(),
+                "age_seconds": round(
+                    max(
+                        0.0,
+                        (
+                            now
+                            - (
+                                item.reported_at
+                                if item.reported_at.tzinfo is not None
+                                else item.reported_at.replace(tzinfo=timezone.utc)
+                            )
+                        ).total_seconds(),
+                    )
+                ),
+            }
+            for item in sorted(
+                history,
+                key=lambda item: item.reported_at,
+            )[-self.max_points :]
+        ]
+
         return json.dumps(
             {
                 "available": True,
                 "latitude": reading.latitude,
                 "longitude": reading.longitude,
-                "reported_at": reading.reported_at.isoformat(),
+                "reported_at": reading_reported_at.isoformat(),
                 "age_seconds": round(age_seconds),
                 "stale": stale,
                 "city": city,
                 "region": region,
                 "country": country,
                 "label": label,
+                "movement_summary": self._movement_summary(history),
+                "recent_fixes": recent_fixes,
             },
             ensure_ascii=False,
         )

@@ -19,3 +19,4 @@ class PaymentOrderResponse(BaseModel):
     credits: int
     status: str
     order_string: str | None = None
+

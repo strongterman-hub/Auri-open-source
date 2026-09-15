@@ -538,3 +538,29 @@ def test_sleep_scores_endpoint_returns_shadow_dual_scores(client) -> None:
     assert score["recovery"]["score"] is not None
     assert score["recovery"]["confidence"] <= 60
     assert "sleep_hrv" in score["recovery"]["missing"]
+
+
+def test_persona_presets_and_me_endpoints(client) -> None:
+    register = client.post(
+        "/v1/auth/register",
+        json={"email": "persona-api@example.com", "password": "test1234"},
+    )
+    assert register.status_code == 201
+    headers = {"Authorization": f"Bearer {register.json()['token']}"}
+
+    presets = client.get("/v1/persona/presets", headers=headers)
+    assert presets.status_code == 200
+    ids = {item["id"] for item in presets.json()["presets"]}
+    assert {"warm_friend", "playful", "calm", "efficient"} <= ids
+
+    me = client.get("/v1/persona/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["preset"]["id"] == "warm_friend"
+    assert me.json()["user_selection_enabled"] is False
+
+    update = client.put(
+        "/v1/persona/me",
+        json={"preset_id": "calm", "overrides": {}},
+        headers=headers,
+    )
+    assert update.status_code == 403

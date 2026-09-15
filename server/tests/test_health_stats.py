@@ -4,12 +4,13 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.agent.tools import HealthStatsTool
 from app.health.stats import compare, summary, trend
 from app.health.store import HealthStore
-from app.schemas.health import HealthMetricIn, HealthMetricOut
+from app.schemas.health import HealthMetricIn, HealthMetricOut, HealthSampleOut
 from app.services.health_service import HealthService
 
 
@@ -69,3 +70,63 @@ def test_health_stats_tool_summary(tmp_dir: Path) -> None:
 
     assert payload["highlights"]["steps_total"] == 3000
     assert payload["metrics"]["STEPS"]["latest_day"] == today
+
+class FakeSleepHealthService:
+    def __init__(self) -> None:
+        self.metric = HealthMetricOut(
+            metric_type="SLEEP", day="2026-09-14", value1=575, updated_at=1
+        )
+        self.sample = HealthSampleOut(
+            metric_type="SLEEP_SESSION",
+            day="2026-09-14",
+            bucket_start="2026-09-14T06:00:00+00:00",
+            bucket_end="2026-09-14T08:38:00+00:00",
+            value1=158,
+            value4="nap",
+        )
+        self.score = SimpleNamespace(
+            sleep_day="2026-09-14",
+            session_start="2026-09-13T17:41:00Z",
+            session_end="2026-09-14T00:42:00Z",
+        )
+
+    def get_metrics(self, *_args, **_kwargs):
+        return [self.metric], [self.sample]
+
+    def get_sleep_scores(self, *_args, **_kwargs):
+        return [self.score]
+
+
+def test_health_stats_trend_includes_sleep_evidence() -> None:
+    tool = HealthStatsTool(FakeSleepHealthService(), "u1", "Asia/Shanghai")
+    payload = json.loads(
+        asyncio.run(
+            tool.execute(
+                operation="trend",
+                metric_type="SLEEP",
+                from_day="2026-09-14",
+                to_day="2026-09-14",
+            )
+        )
+    )
+    evidence = payload["sleep_evidence"][0]
+    assert evidence["daily_total_sleep_minutes"] == 575
+    assert evidence["main_sleep_episode"]["interval_minutes"] == 421
+    assert evidence["nap_minutes"] == 158
+
+
+def test_health_stats_compare_includes_sleep_evidence() -> None:
+    tool = HealthStatsTool(FakeSleepHealthService(), "u1", "Asia/Shanghai")
+    payload = json.loads(
+        asyncio.run(
+            tool.execute(
+                operation="compare",
+                metric_type="SLEEP",
+                from_day="2026-09-13",
+                to_day="2026-09-13",
+                compare_from_day="2026-09-14",
+                compare_to_day="2026-09-14",
+            )
+        )
+    )
+    assert payload["sleep_evidence"][0]["main_sleep_episode"]["interval_minutes"] == 421

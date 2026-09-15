@@ -69,3 +69,4 @@ async def alipay_notification(request: Request, container: ContainerDep) -> Plai
     params = dict(parse_qsl(body, keep_blank_values=True))
     accepted = container.billing_service.handle_alipay_notification(params)
     return PlainTextResponse("success" if accepted else "failure")
+

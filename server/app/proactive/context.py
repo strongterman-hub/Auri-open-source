@@ -151,6 +151,10 @@ class SituationSnapshot(BaseModel):
                     )
                     if key in signal.value
                 }
+            elif signal.source == "derived":
+                # The activity signal contains only labels, reasons and evidence
+                # ids; it never contains raw coordinates or conversation text.
+                item["value"] = dict(signal.value)
             signal_metadata.append(item)
         return {
             "id": self.id,
@@ -201,11 +205,11 @@ class ProactiveAuditLogger:
             "evidence_refs",
             "decision_reason",
             "silence_reason",
-            "decided_at",
-            "delivery_channel",
             "continuity_status",
             "continuity_reason",
             "continuity_refs",
+            "decided_at",
+            "delivery_channel",
         }
         decision_payload = {
             key: value
@@ -240,6 +244,7 @@ class ProactiveGateLogger:
         reason: str,
         pacing_state: dict[str, Any] | None = None,
         outstanding: tuple[int, int] | None = None,
+        sleep_state: dict[str, Any] | None = None,
     ) -> None:
         state = pacing_state or {}
         record = {
@@ -264,6 +269,19 @@ class ProactiveGateLogger:
                 "interactive": outstanding[1] if outstanding else 0,
             },
         }
+        if sleep_state is not None:
+            record["sleep"] = {
+                key: sleep_state.get(key)
+                for key in (
+                    "source",
+                    "state",
+                    "sleep_day",
+                    "blocked_until",
+                    "confidence",
+                    "deferred_sources",
+                    "wake_followup_due",
+                )
+            }
         with self._lock:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -288,6 +306,7 @@ class ProactiveContextBuilder:
         presence_ttl_seconds: int = 5,
         gps_fresh_seconds: int = 900,
         gps_stale_seconds: int = 7200,
+        gps_history_points: int = 12,
         conversation_fresh_seconds: int = 1800,
         conversation_stale_seconds: int = 21600,
         conversation_tail_messages: int = 4,
@@ -317,6 +336,7 @@ class ProactiveContextBuilder:
         self.presence_ttl_seconds = presence_ttl_seconds
         self.gps_fresh_seconds = gps_fresh_seconds
         self.gps_stale_seconds = gps_stale_seconds
+        self.gps_history_points = max(2, min(int(gps_history_points), 50))
         self.conversation_fresh_seconds = conversation_fresh_seconds
         self.conversation_stale_seconds = conversation_stale_seconds
         self.conversation_tail_messages = max(1, conversation_tail_messages)
@@ -445,6 +465,10 @@ class ProactiveContextBuilder:
             signals.extend(source_signals)
             availability[name] = self._availability(source_signals)
 
+        activity_signal = self._activity_signal(signals, current)
+        signals.insert(1, activity_signal)
+        availability["derived"] = self._availability([activity_signal])
+
         snapshot = SituationSnapshot(
             user_id=scope.user_id,
             agent_id=scope.agent_id,
@@ -475,6 +499,216 @@ class ProactiveContextBuilder:
             if not added:
                 break
         return selected
+
+    def _activity_signal(
+        self,
+        signals: list[SituationSignal],
+        now: datetime,
+    ) -> SituationSignal:
+        """Compile one deterministic, evidence-backed current-activity hint.
+
+        The model should not have to infer a state from raw GPS/health arrays.
+        This is deliberately conservative: explicit owner statements and fresh
+        sensors outrank schedules, and the result says unknown when evidence is
+        missing. It never claims a route, origin, destination or place purpose.
+        """
+        state, confidence, reason, evidence_ids, observed_at = self._derive_activity(
+            signals, now
+        )
+        freshness = (
+            SignalFreshness.fresh
+            if evidence_ids
+            else SignalFreshness.unknown
+        )
+        return self._signal(
+            evidence_id="activity_state",
+            source="derived",
+            kind="current_activity",
+            value={
+                "state": state,
+                "confidence": confidence,
+                "reason": reason,
+                "evidence_refs": evidence_ids,
+                "rule": (
+                    "Derived from explicit owner messages and fresh signals only. "
+                    "unknown means no reliable current-activity evidence."
+                ),
+            },
+            observed_at=observed_at,
+            now=now,
+            fresh_seconds=self.conversation_fresh_seconds,
+            stale_seconds=max(self.conversation_stale_seconds, 6 * 3600),
+            confidence=confidence,
+            freshness=freshness,
+        )
+
+    def _derive_activity(
+        self,
+        signals: list[SituationSignal],
+        now: datetime,
+    ) -> tuple[str, float, str, list[str], datetime]:
+        by_id = {signal.id: signal for signal in signals}
+
+        # 1) The user's own recent words are the strongest current-state signal.
+        owner_signals = [
+            signal
+            for signal in signals
+            if signal.source == "conversation"
+            and signal.kind == "user_exchange"
+            and signal.freshness is SignalFreshness.fresh
+            and signal.value.get("role") == "user"
+        ]
+        owner_signals.sort(key=lambda item: item.observed_at or now)
+        for signal in reversed(owner_signals[-6:]):
+            text = str(signal.value.get("text") or "")
+            if any(term in text for term in ("到了", "到家", "回来了", "回到")):
+                return (
+                    "arrived",
+                    0.80,
+                    "用户近期明确表示已经到达某处",
+                    [signal.id],
+                    signal.observed_at or now,
+                )
+            if any(
+                term in text
+                for term in ("已经出门", "出发了", "在路上", "在去", "去往", "赶去", "通勤")
+            ):
+                return (
+                    "commuting",
+                    0.85,
+                    "用户近期明确表示正在出门或前往某处",
+                    [signal.id],
+                    signal.observed_at or now,
+                )
+            if any(term in text for term in ("运动完", "跑完", "骑完", "练完")):
+                return (
+                    "post_exercise",
+                    0.75,
+                    "用户近期明确表示运动已经结束",
+                    [signal.id],
+                    signal.observed_at or now,
+                )
+            if any(term in text for term in ("正在运动", "在跑步", "在骑车", "去跑步", "去运动", "去骑车")):
+                return (
+                    "exercising",
+                    0.70,
+                    "用户近期明确表示正在或准备去运动",
+                    [signal.id],
+                    signal.observed_at or now,
+                )
+            if any(term in text for term in ("在吃饭", "去食堂", "吃饭")):
+                return (
+                    "meal",
+                    0.65,
+                    "用户近期提到吃饭或去食堂",
+                    [signal.id],
+                    signal.observed_at or now,
+                )
+
+        # 2) Fresh sleep stage: 1/2/3 are asleep/deep/light; 5 is awake.
+        sleep = by_id.get("health_sleep_stage_latest")
+        if sleep is not None and sleep.freshness is SignalFreshness.fresh:
+            try:
+                stage = int(sleep.value.get("value1"))
+            except (TypeError, ValueError):
+                stage = 0
+            if stage in (1, 2, 3):
+                return (
+                    "sleeping",
+                    0.90,
+                    "新鲜睡眠分期显示用户正在睡眠",
+                    [sleep.id],
+                    sleep.observed_at or now,
+                )
+
+        # 3) A workout whose interval contains now is strong exercise evidence.
+        workout = by_id.get("health_workout_latest")
+        if (
+            workout is not None
+            and workout.freshness is SignalFreshness.fresh
+            and workout.value.get("in_progress") is True
+        ):
+            return (
+                "exercising",
+                0.85,
+                "健康数据表明运动仍在进行",
+                [workout.id],
+                workout.observed_at or now,
+            )
+
+        # 4) An active calendar event means the user may be in that event.
+        active_schedule = [
+            signal
+            for signal in signals
+            if signal.source == "schedule"
+            and signal.value.get("active_now")
+            and signal.freshness is SignalFreshness.fresh
+        ]
+        if active_schedule:
+            event = active_schedule[0]
+            title = str(event.value.get("title") or "").strip()
+            return (
+                "in_event",
+                0.75,
+                f"日历显示「{title}」正在进行（仅为计划，不代表真实活动）",
+                [event.id],
+                event.observed_at or now,
+            )
+
+        gps = by_id.get("gps_latest")
+        if gps is not None and gps.freshness is SignalFreshness.fresh:
+            movement = str(gps.value.get("movement") or "unknown")
+            if movement == "moving":
+                # A fresh moving signal plus a schedule starting soon is a
+                # reasonable "commuting" hypothesis, not a confirmed route.
+                upcoming = [
+                    signal
+                    for signal in signals
+                    if signal.source == "schedule"
+                    and signal.freshness is SignalFreshness.fresh
+                    and signal.value.get("starts_at")
+                ]
+                for signal in upcoming:
+                    try:
+                        starts_at = datetime.fromisoformat(
+                            str(signal.value["starts_at"])
+                        )
+                    except ValueError:
+                        continue
+                    if starts_at.tzinfo is None:
+                        starts_at = starts_at.replace(tzinfo=now.tzinfo)
+                    seconds = (starts_at - now).total_seconds()
+                    if 0 <= seconds <= 90 * 60:
+                        return (
+                            "commuting",
+                            0.70,
+                            "位置持续变化且近期有日程将开始，可能在前往途中",
+                            [gps.id, signal.id],
+                            gps.observed_at or now,
+                        )
+                return (
+                    "moving",
+                    0.60,
+                    "位置持续变化，但目的地和交通方式未知",
+                    [gps.id],
+                    gps.observed_at or now,
+                )
+            if movement == "stationary":
+                return (
+                    "stationary",
+                    0.55,
+                    "最近位置点显示用户停留在某一区域；具体地点未知",
+                    [gps.id],
+                    gps.observed_at or now,
+                )
+
+        return (
+            "unknown",
+            0.0,
+            "没有可靠的新鲜证据判断用户当前在做什么",
+            [],
+            now,
+        )
 
     @staticmethod
     def _availability(signals: list[SituationSignal]) -> str:
@@ -721,25 +955,43 @@ class ProactiveContextBuilder:
         scope: MemoryScope,
         now: datetime,
     ) -> list[SituationSignal]:
-        history = self.presence.location_history(scope.user_id, scope.agent_id, limit=2)
+        history = self.presence.location_history(
+            scope.user_id,
+            scope.agent_id,
+            limit=self.gps_history_points,
+        )
         if not history:
             return []
         latest = history[0]
+        ordered = sorted(history, key=lambda item: _aware(item.reported_at))
         movement = "unknown"
         distance_m: float | None = None
         speed_mps: float | None = None
-        if len(history) > 1:
-            previous = history[1]
-            elapsed = (
-                _aware(latest.reported_at) - _aware(previous.reported_at)
-            ).total_seconds()
-            if 0 < elapsed <= 1800:
-                distance_m = self._distance_m(previous, latest)
-                speed_mps = distance_m / elapsed
-                if distance_m <= 100:
+        window_minutes: float | None = None
+        if len(ordered) > 1:
+            total_distance = 0.0
+            moving_seconds = 0.0
+            max_speed = 0.0
+            for first, second in zip(ordered, ordered[1:]):
+                elapsed = (
+                    _aware(second.reported_at) - _aware(first.reported_at)
+                ).total_seconds()
+                if elapsed <= 0:
+                    continue
+                segment = self._distance_m(first, second)
+                total_distance += segment
+                moving_seconds += elapsed
+                max_speed = max(max_speed, segment / elapsed)
+            if moving_seconds > 0:
+                distance_m = total_distance
+                speed_mps = total_distance / moving_seconds
+                window_minutes = round(moving_seconds / 60, 1)
+                if max_speed < 0.5 and total_distance < 150:
                     movement = "stationary"
-                elif distance_m >= 250 and speed_mps >= 0.3:
+                elif max_speed >= 0.3 and total_distance >= 250:
                     movement = "moving"
+                else:
+                    movement = "stationary" if total_distance < 250 else "unknown"
         return [
             self._signal(
                 evidence_id="gps_latest",
@@ -751,6 +1003,8 @@ class ProactiveContextBuilder:
                     "movement": movement,
                     "distance_m": round(distance_m) if distance_m is not None else None,
                     "speed_mps": round(speed_mps, 2) if speed_mps is not None else None,
+                    "window_minutes": window_minutes,
+                    "points": len(ordered),
                     "location_source": "device_report",
                 },
                 observed_at=_aware(latest.reported_at),

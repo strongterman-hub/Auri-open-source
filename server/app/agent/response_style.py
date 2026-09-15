@@ -4,6 +4,7 @@ import re
 
 
 RESPONSE_STYLES = ("micro", "short", "normal", "detailed")
+STYLE_RANK = {name: index for index, name in enumerate(RESPONSE_STYLES)}
 
 _MICRO_EXACT = {
     "谢谢",
@@ -72,6 +73,37 @@ def normalize_response_style(value: str | None, *, fallback: str = "short") -> s
     return normalized if normalized in RESPONSE_STYLES else fallback
 
 
+def anchor_response_style(
+    user_text: str,
+    planned_style: str,
+    *,
+    has_attachment: bool = False,
+    is_task: bool = False,
+    is_safety: bool = False,
+) -> str:
+    """Cap casual reply length by the user message length.
+
+    Task, attachment and safety turns keep their planned band because
+    completeness matters more than brevity there.
+    """
+
+    planned = normalize_response_style(planned_style)
+    if has_attachment or is_task or is_safety:
+        return planned
+    if any(marker in (user_text or "") for marker in _DETAILED_MARKERS):
+        return planned
+    normalized = re.sub(r"[\s。.!！,，?？~～]+", "", user_text or "")
+    if len(normalized) <= 8:
+        maximum = "micro"
+    elif len(normalized) <= 25:
+        maximum = "short"
+    elif len(normalized) <= 80:
+        maximum = "short"
+    else:
+        maximum = planned
+    return planned if STYLE_RANK[planned] <= STYLE_RANK[maximum] else maximum
+
+
 def infer_response_style(
     text: str,
     *,
@@ -98,14 +130,15 @@ _STYLE_INSTRUCTIONS = {
     "micro": (
         "Reply with one natural sentence, usually about 5-35 Chinese characters. "
         "Acknowledge or respond directly; add no explanation, list, summary, or follow-up "
-        "question unless it is essential."
+        "question unless it is essential. Do not use a list or a stock closing offer."
     ),
     "short": (
         "Reply in 1-3 natural sentences, usually about 20-100 Chinese characters. "
         "Give the direct answer or reaction first. Mention only the one most useful point; "
         "do not expand every possibility, repeat the user, or mechanically ask a question "
-        "at the end. Style example only: for '我今天好累', prefer '那先别硬撑了，歇一会儿吧。' "
-        "over an unsolicited list of advice."
+        "at the end. Do not append a generic offer such as '需要我帮你吗'; do not use a list "
+        "unless the user asked for steps. Style example only: for '我今天好累', prefer "
+        "'那先别硬撑了，歇一会儿吧。' over an unsolicited list of advice."
     ),
     "normal": (
         "Give the conclusion first, then only the necessary reason or next steps, usually "

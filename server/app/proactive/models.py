@@ -23,6 +23,8 @@ class ProactiveCategory(str, Enum):
     weather = "weather"
     profile_question = "profile_question"
     explore = "explore"
+    casual_checkin = "casual_checkin"
+    self_share = "self_share"
     goal_reminder = "goal_reminder"
     memory_recall = "memory_recall"
     trending = "trending"

@@ -124,6 +124,7 @@ class AgentRunContext:
     scope: MemoryScope
     history: list[dict[str, Any]]
     memory_prompt: str
+    current_message_ids: list[str] | None = None
     summary: str | None = None
     tools: list[Tool] = field(default_factory=list)
     onboarding_mode: bool = False
@@ -132,6 +133,12 @@ class AgentRunContext:
     current_time: str | None = None
     xiaomi_status_text: str | None = None
     response_style: str | None = None
+    persona_prompt: str | None = None
+    relationship_prompt: str | None = None
+    behavior_prompt: str | None = None
+    persona_id: str | None = None
+    persona_version: str | None = None
+    policy_flags: dict[str, Any] | None = None
 
 
 @dataclass
@@ -176,6 +183,13 @@ def _system_content(context: AgentRunContext) -> str:
             content += "\n\n" + ONBOARDING_ACTION_HINT.format(labels=labels)
     if context.summary:
         content += SUMMARY_BLOCK_PREFIX + context.summary
+    for block in (
+        context.persona_prompt,
+        context.relationship_prompt,
+        context.behavior_prompt,
+    ):
+        if block:
+            content += "\n\n" + block
     if context.response_style:
         content += RESPONSE_STYLE_BLOCK_PREFIX + response_style_instruction(
             context.response_style
@@ -187,12 +201,67 @@ def _system_content(context: AgentRunContext) -> str:
     )
 
 
-def _llm_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep the provider message shape clean; timestamps live in the system map."""
-    return [
-        {"role": message.get("role", "user"), "content": message.get("content", "")}
-        for message in history
-    ]
+def _llm_history(
+    history: list[dict[str, Any]],
+    current_message_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Keep the provider message shape clean; timestamps live in the system map.
+
+    Historical image parts are replaced with a short text marker unless the
+    message belongs to the current reply batch. Otherwise one old image would
+    make every later text turn look multimodal, force the vision model and keep
+    large base64 payloads in an already long prompt.
+    """
+    if current_message_ids is None:
+        current_ids: set[str] | None = None
+    else:
+        current_ids = {str(item) for item in current_message_ids}
+    cleaned: list[dict[str, Any]] = []
+    for message in history:
+        message_id = str(message.get("id") or "")
+        content = message.get("content", "")
+        is_current = current_ids is None or message_id in current_ids
+        if not is_current and isinstance(content, list):
+            text_parts = [
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
+            image_count = sum(
+                1
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "image_url"
+            )
+            file_count = sum(
+                1
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "file"
+            )
+            action_labels: list[str] = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "actions":
+                    continue
+                for action in part.get("actions") or []:
+                    if isinstance(action, dict) and action.get("label"):
+                        action_labels.append(str(action["label"]))
+            text = "\n".join(part for part in text_parts if part)
+            if image_count:
+                text = (text + f"\n[历史图片：{image_count} 张，已省略]").strip()
+            if file_count:
+                text = (text + f"\n[历史文件：{file_count} 个，已省略]").strip()
+            if action_labels:
+                text = (
+                    text
+                    + "\n[历史操作按钮：" + "、".join(action_labels[:4]) + "]"
+                ).strip()
+            content = text
+        cleaned.append(
+            {
+                "role": message.get("role", "user"),
+                "content": content,
+            }
+        )
+    return cleaned
 
 
 def _contains_image(messages: list[dict[str, Any]]) -> bool:
@@ -262,7 +331,7 @@ class BasicAgentRunner(AgentRunner):
             "weather",
             "read_health_data",
             "health_stats",
-            "get_location",
+            "get_current_location",
             "get_current_time",
             "memory_search",
         }
@@ -347,8 +416,24 @@ Do not convert routine conversation into advice or force a question. No new fact
             else "这部分我还没核实清楚，先不下结论。"
         )
 
-    def _model_for(self, messages: list[dict[str, Any]]) -> str | None:
-        if self.vision_model and _contains_image(messages):
+    def _model_for(
+        self,
+        history: list[dict[str, Any]],
+        current_message_ids: list[str] | None = None,
+    ) -> str | None:
+        if not self.vision_model:
+            return None
+        if current_message_ids is None:
+            # Backward-compatible test/default path: inspect the full history.
+            candidates = history
+        else:
+            current_ids = {str(item) for item in current_message_ids}
+            candidates = [
+                message
+                for message in history
+                if str(message.get("id") or "") in current_ids
+            ]
+        if _contains_image(candidates):
             return self.vision_model
         return None
 
@@ -404,6 +489,9 @@ Do not convert routine conversation into advice or force a question. No new fact
                 "status": status,
                 "response_chars": response_chars,
                 "response_style": context.response_style,
+                "persona_id": context.persona_id,
+                "persona_version": context.persona_version,
+                "policy_flags": context.policy_flags,
                 "grounding": grounding,
             }
         )
@@ -420,7 +508,7 @@ Do not convert routine conversation into advice or force a question. No new fact
                 "role": "system",
                 "content": _system_content(context),
             },
-            *_llm_history(context.history),
+            *_llm_history(context.history, context.current_message_ids),
         ]
         tool_schemas = [tool.to_openai_tool() for tool in context.tools] or None
         tools_by_name = {tool.name: tool for tool in context.tools}
@@ -429,7 +517,7 @@ Do not convert routine conversation into advice or force a question. No new fact
         llm_calls = 0
         tool_logs: list[dict[str, Any]] = []
         totals = _empty_token_totals()
-        model = self._model_for(messages)
+        model = self._model_for(context.history, context.current_message_ids)
         llm_kwargs = {"model": model} if model else {}
 
         for _ in range(self.max_tool_rounds):
@@ -534,7 +622,7 @@ Do not convert routine conversation into advice or force a question. No new fact
                 "role": "system",
                 "content": _system_content(context),
             },
-            *_llm_history(context.history),
+            *_llm_history(context.history, context.current_message_ids),
         ]
         tool_schemas = [tool.to_openai_tool() for tool in context.tools] or None
         tools_by_name = {tool.name: tool for tool in context.tools}
@@ -543,7 +631,7 @@ Do not convert routine conversation into advice or force a question. No new fact
         llm_calls = 0
         tool_logs: list[dict[str, Any]] = []
         totals = _empty_token_totals()
-        model = self._model_for(messages)
+        model = self._model_for(context.history, context.current_message_ids)
         llm_kwargs = {"model": model} if model else {}
 
         for _ in range(self.max_tool_rounds):

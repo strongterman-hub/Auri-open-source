@@ -170,6 +170,13 @@ def test_agent_service_compacts_without_rotating() -> None:
     assert turn.text == "ok"
 
 
+def test_agent_service_marks_current_message_for_model_routing() -> None:
+    service, _store, runner = _service(_session(message_count=2))
+    asyncio_run(service.send("s1", "hello"))
+    context = runner.contexts[-1]
+    assert context.current_message_ids == [context.history[-1]["id"]]
+
+
 def test_agent_service_resets_on_idle() -> None:
     session = _session(message_count=20)
     session.updated_at = datetime.now(timezone.utc) - timedelta(minutes=10)

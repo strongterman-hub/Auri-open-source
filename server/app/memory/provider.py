@@ -36,3 +36,4 @@ class MemoryStoreRegistry:
 
 
 default_memory_store_registry = MemoryStoreRegistry()
+

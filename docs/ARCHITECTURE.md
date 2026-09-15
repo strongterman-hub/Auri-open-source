@@ -31,6 +31,7 @@ flowchart TD
 | `server/app/state/container.py` | 构建每个存储、服务、模型和工具 |
 | `server/app/agent/` | 模型协议、工具循环、上下文压缩 |
 | `server/app/chat/` | 回复计划、持久任务、租约、重试和调度 |
+| `server/app/persona/` | 可配置人设预设、关系状态、open loops 和逐轮行为策略 |
 | `server/app/memory/` | 长期笔记、观察检索、事件及前瞻记录 |
 | `server/app/proactive/` | 情境、决策、节奏、引导、投递、推送 |
 | `server/app/health/` | 标准化指标、统计、睡眠评分和缓存 |

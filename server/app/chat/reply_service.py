@@ -107,6 +107,7 @@ class ChatReplyService:
                 allow_silent=allow_silent,
                 user_id=job.user_id,
                 session_id=job.session_id,
+                agent_id=job.agent_id,
             )
             if plan.outcome == "silent":
                 await self.session_service.settle_messages(
@@ -122,6 +123,11 @@ class ChatReplyService:
                     plan.lane,
                     plan.verbosity,
                     plan.reason,
+                    allow_question=plan.allow_question,
+                    max_style=plan.max_style,
+                    policy_reason=plan.policy_reason,
+                    open_loop_count=plan.open_loop_count,
+                    persona_id=plan.persona_id,
                 )
                 return
 
@@ -143,6 +149,11 @@ class ChatReplyService:
                 plan.verbosity,
                 plan.reason,
                 delay_ms=round(delay * 1000),
+                allow_question=plan.allow_question,
+                max_style=plan.max_style,
+                policy_reason=plan.policy_reason,
+                open_loop_count=plan.open_loop_count,
+                persona_id=plan.persona_id,
             )
         except Exception as exc:  # planner failures must become fast replies, never silence
             self.logger.exception("reply planning failed job=%s", job.id)
@@ -244,6 +255,11 @@ class ChatReplyService:
         reason: str,
         *,
         delay_ms: int | None = None,
+        allow_question: bool | None = None,
+        max_style: str | None = None,
+        policy_reason: str | None = None,
+        open_loop_count: int | None = None,
+        persona_id: str | None = None,
     ) -> None:
         if self.audit_path is None:
             return
@@ -258,6 +274,12 @@ class ChatReplyService:
             "reason": reason,
             "message_count": len(job.message_ids),
             "delay_ms": delay_ms,
+            "allow_question": allow_question,
+            "max_style": max_style,
+            "policy_reason": policy_reason,
+            "open_loop_count": open_loop_count,
+            "persona_id": persona_id,
+            "persona_enabled": bool(persona_id),
         }
         try:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)

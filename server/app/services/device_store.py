@@ -20,9 +20,15 @@ class StoredLocation:
 class DeviceStore:
     """Durable registration of push device tokens across server restarts."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        location_history_limit: int = 1000,
+    ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.location_history_limit = max(2, min(int(location_history_limit), 10_000))
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -119,7 +125,7 @@ class DeviceStore:
         longitude: float,
         reported_at: datetime | None = None,
     ) -> None:
-        """Persist only the two newest positions needed for movement context."""
+        """Persist a bounded rolling history for movement/stay summaries."""
         observed = reported_at or _utcnow()
         if observed.tzinfo is None:
             observed = observed.replace(tzinfo=timezone.utc)
@@ -145,10 +151,16 @@ class DeviceStore:
                     SELECT id FROM device_locations
                     WHERE user_id = ? AND agent_id = ?
                     ORDER BY reported_at DESC, id DESC
-                    LIMIT 2
+                    LIMIT ?
                 )
                 """,
-                (user_id, agent_id, user_id, agent_id),
+                (
+                    user_id,
+                    agent_id,
+                    user_id,
+                    agent_id,
+                    self.location_history_limit,
+                ),
             )
 
     def location_history(
@@ -166,7 +178,11 @@ class DeviceStore:
                 ORDER BY reported_at DESC, id DESC
                 LIMIT ?
                 """,
-                (user_id, agent_id, max(1, min(int(limit), 10))),
+                (
+                    user_id,
+                    agent_id,
+                    max(1, min(int(limit), self.location_history_limit)),
+                ),
             ).fetchall()
         return [
             StoredLocation(

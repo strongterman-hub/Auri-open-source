@@ -60,6 +60,7 @@ class AccountDeletionService:
         timezone_store: UserTimezoneStore,
         event_store: EventMemoryStore | None = None,
         chat_reply_store: ChatReplyStore | None = None,
+        persona_store=None,
         schedule_service=None,
         event_memory_service=None,
     ) -> None:
@@ -88,6 +89,7 @@ class AccountDeletionService:
         self.timezone_store = timezone_store
         self.event_store = event_store
         self.chat_reply_store = chat_reply_store
+        self.persona_store = persona_store
         self.schedule_service = schedule_service
         self.event_memory_service = event_memory_service
 
@@ -136,6 +138,8 @@ class AccountDeletionService:
         self.timezone_store.delete_user(user_id)
         if self.chat_reply_store is not None:
             self.chat_reply_store.delete_user(user_id, agent_id)
+        if self.persona_store is not None:
+            self.persona_store.delete_user(user_id, agent_id)
         self.billing_store.delete_user(user_id)
 
         self.auth_store.delete_tokens_for_user(user_id)

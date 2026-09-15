@@ -141,3 +141,4 @@ def add_days(date_str: str, days: int) -> date:
 
 def days_between(from_str: str, to_str: str) -> int:
     return (date.fromisoformat(to_str) - date.fromisoformat(from_str)).days
+

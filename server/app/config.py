@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     default_memory_char_limit: int = 2200
     default_user_char_limit: int = 1375
     memory_backend: str = "file"
+    # Persona and relationship behavior. Personas are JSON presets; a user
+    # selection can override safe style fields later without an Android release.
+    persona_enabled: bool = True
+    persona_default_preset: str = "warm_friend"
+    persona_presets_dir: str | None = None
+    persona_user_selection_enabled: bool = False
+    persona_canary_user_ids: str = ""
+    persona_version: str = "v1"
+    persona_prompt_max_chars: int = 900
     # Background consolidation (dreaming-lite). Write approval is reserved and
     # not yet enforced by the memory tool.
     memory_consolidation_max_candidates: int = 10
@@ -92,6 +101,13 @@ class Settings(BaseSettings):
     # Model used for image-bearing turns. DeepSeek's vision model is opt-in and
     # selected per request only when the conversation contains an image.
     llm_vision_model: str = "deepseek-v4-flash-vision-exp"
+
+    # Location context. A rolling bounded history lets the agent reason about
+    # movement over multiple reports instead of only the latest two points.
+    # Coordinates remain private server-side data and are not written to audit
+    # logs; tools expose them only to the model for the current user.
+    location_history_limit: int = 1000
+    location_context_max_points: int = 12
 
     # Context compression. Auri keeps the full transcript on disk and injects a
     # rolling summary plus a recent tail into the prompt once the assembled
@@ -129,6 +145,11 @@ class Settings(BaseSettings):
     chat_reply_away_max_seconds: float = 300.0
     chat_reply_max_attempts: int = 3
     chat_reply_retry_seconds: float = 15.0
+    # Friend-style length anchoring and open-loop based question control.
+    chat_reply_style_anchor_enabled: bool = True
+    chat_reply_silent_enabled: bool = True
+    chat_open_loop_ttl_hours: int = 24
+    chat_open_loop_important_ttl_hours: int = 72
 
     # Proactive messaging. The engine is disabled by default and only runs when
     # enabled, so existing deployments are unchanged until the feature is turned on.
@@ -189,6 +210,18 @@ class Settings(BaseSettings):
     # The value is kept for compatibility and defaults to an effectively
     # unlimited count if a budget is ever re-enabled.
     proactive_daily_budget: int = 200
+    # High-frequency proactive behavior. The daily limit replaces the legacy
+    # effectively-unlimited budget for persona-enabled users; category quotas
+    # keep the high frequency from collapsing into health/weather broadcasts.
+    proactive_frequency_preset: str = "high"
+    proactive_daily_message_limit: int = 24
+    proactive_health_daily_limit: int = 3
+    proactive_weather_daily_limit: int = 2
+    proactive_explore_daily_limit: int = 6
+    proactive_casual_checkin_daily_limit: int = 4
+    proactive_self_share_daily_limit: int = 4
+    proactive_memory_recall_daily_limit: int = 3
+    proactive_goal_reminder_daily_limit: int = 4
     proactive_cooldown_seconds: int = 3600
     # Suppress proactive delivery while the user is actively chatting. If the
     # last message in the active session is an unanswered user message, or the
@@ -228,7 +261,6 @@ class Settings(BaseSettings):
     # only fall back to the fixed quiet window when no fresh signal exists.
     proactive_sleep_detection_enabled: bool = True
     proactive_sleep_stage_freshness_seconds: int = 900
-
     # Personal sleep context. A bounded per-user window is learned from the
     # canonical main-sleep rows produced by sleep_dual_v1. Live sleep stages
     # remain the strongest signal; the personal window replaces the fixed
@@ -279,16 +311,16 @@ class Settings(BaseSettings):
     # Fallback timezone used for a user until their device reports one.
     default_timezone: str = "Asia/Shanghai"
 
-    # Live web search and page fetch. openwebsearch is the default and talks to
-    # a local open-webSearch daemon; duckduckgo/tavily remain available as
-    # fallbacks when a key or daemon is not configured.
+    # Live web search and page fetch. The portable default is none; openwebsearch
+    # talks to a local open-webSearch daemon, while duckduckgo/tavily remain
+    # available as fallbacks when a key or daemon is not configured.
     web_search_provider: str = "none"  # none | openwebsearch | duckduckgo | tavily
     web_search_base_url: str = "http://127.0.0.1:3000"
     web_search_engine: str = "bing"
     tavily_api_key: str | None = None
     web_search_timeout_seconds: float = 15.0
     web_fetch_max_chars: int = 12000
-    web_user_agent: str = "Auri/0.1 (+https://auri.thinktocode.online)"
+    web_user_agent: str = "Auri/0.1 (+https://your-domain.example)"
 
     # Daily trending-news sharing. Off by default; enable once the search
     # provider above is working so Auri does not silently fail to send news.

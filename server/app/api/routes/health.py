@@ -12,3 +12,4 @@ async def health(container: ContainerDep) -> dict:
         "app": container.settings.app_name,
         "environment": container.settings.environment,
     }
+

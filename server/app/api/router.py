@@ -10,6 +10,7 @@ from app.api.routes import (
     integrations_xiaomi,
     memory,
     observations,
+    persona,
     presence,
     proactive,
     profile,
@@ -34,6 +35,7 @@ api_router.include_router(
     integrations_xiaomi.router, prefix="/integrations/xiaomi", tags=["integrations"]
 )
 api_router.include_router(presence.router)
+api_router.include_router(persona.router)
 api_router.include_router(profile.router)
 api_router.include_router(proactive.router)
 api_router.include_router(told.router)

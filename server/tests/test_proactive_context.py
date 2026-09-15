@@ -461,7 +461,9 @@ def test_conversation_context_keeps_user_exchange_after_assistant_traffic(
     )
     asyncio.run(sessions.save(session))
 
-    snapshot = asyncio.run(builder.build(MemoryScope(user_id="u1"), now=now))
+    snapshot = asyncio.run(
+        builder.build(MemoryScope(user_id="u1"), now=now)
+    )
 
     game = snapshot.signal("conversation_exchange_game-answer")
     correction = snapshot.signal("conversation_exchange_continuity-error")
@@ -471,3 +473,69 @@ def test_conversation_context_keeps_user_exchange_after_assistant_traffic(
     assert game.value["reply_to_text"] == "玩的什么游戏？"
     assert correction is not None
     assert correction.value["continuity_error"] is True
+
+def test_activity_state_prefers_fresh_owner_route_statement(tmp_dir: Path) -> None:
+    now = datetime.now(timezone.utc)
+    builder, sessions, *_ = _builder(tmp_dir)
+    session = asyncio.run(
+        sessions.create(SessionCreate(user_id="u1", agent_id="default"))
+    )
+    session.messages.append(
+        {
+            "id": "owner-route",
+            "role": "user",
+            "content": "我已经出发了，在路上",
+            "timestamp": (now - timedelta(minutes=1)).isoformat(),
+        }
+    )
+    asyncio.run(sessions.save(session))
+
+    snapshot = asyncio.run(
+        builder.build(MemoryScope(user_id="u1"), now=now)
+    )
+
+    activity = snapshot.signal("activity_state")
+    assert activity is not None
+    assert activity.source == "derived"
+    assert activity.value["state"] == "commuting"
+    assert activity.value["confidence"] >= 0.8
+    assert "conversation_exchange_owner-route" in activity.value["evidence_refs"]
+
+
+def test_activity_state_uses_fresh_sleep_stage(tmp_dir: Path) -> None:
+    now = datetime.now(timezone.utc)
+    sleeping = HealthSampleOut(
+        metric_type="SLEEP_STAGE",
+        day=now.date().isoformat(),
+        bucket_start=(now - timedelta(minutes=4)).isoformat(),
+        bucket_end=(now - timedelta(minutes=3)).isoformat(),
+        value1=2,
+        quality=0.9,
+    )
+    builder, *_ = _builder(
+        tmp_dir,
+        health_store=FakeHealthStore({"SLEEP_STAGE": sleeping}),
+    )
+
+    snapshot = asyncio.run(
+        builder.build(MemoryScope(user_id="u1"), now=now)
+    )
+
+    activity = snapshot.signal("activity_state")
+    assert activity is not None
+    assert activity.value["state"] == "sleeping"
+    assert "health_sleep_stage_latest" in activity.value["evidence_refs"]
+
+
+def test_activity_state_marks_unknown_when_no_fresh_evidence(tmp_dir: Path) -> None:
+    builder, *_ = _builder(tmp_dir)
+
+    snapshot = asyncio.run(
+        builder.build(MemoryScope(user_id="u1"))
+    )
+
+    activity = snapshot.signal("activity_state")
+    assert activity is not None
+    assert activity.value["state"] == "unknown"
+    assert activity.value["evidence_refs"] == []
+    assert activity.freshness is SignalFreshness.unknown

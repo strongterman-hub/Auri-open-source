@@ -42,3 +42,4 @@ class Reminder(BaseModel):
     status: ReminderStatus = ReminderStatus.pending
     last_fired_at: datetime | None = None
     created_at: datetime = Field(default_factory=_utcnow)
+

@@ -15,6 +15,7 @@ from app.config import Settings
 from app.files.parser import extract_text
 from app.files.store import FileStore, StoredFile
 from app.memory.models import MemoryScope
+from app.persona.service import PersonaService
 from app.services.memory_service import MemoryService
 from app.services.event_memory_service import EventMemoryService
 from app.services.presence_service import LocationRequester
@@ -100,6 +101,7 @@ class AgentService:
         xiaomi_status_provider: Callable[[str], dict] | None = None,
         timezone_resolver: Callable[[str], str] | None = None,
         event_memory_service: EventMemoryService | None = None,
+        persona_service: PersonaService | None = None,
         schedule_service=None,
     ) -> None:
         self.session_service = session_service
@@ -119,6 +121,7 @@ class AgentService:
         self.xiaomi_status_provider = xiaomi_status_provider
         self.timezone_resolver = timezone_resolver
         self.event_memory_service = event_memory_service
+        self.persona_service = persona_service
         self.schedule_service = schedule_service
         self._session_locks: dict[str, asyncio.Lock] = {}
 
@@ -215,6 +218,14 @@ class AgentService:
             session.messages.append(user_message)
             session.touch()
             await self.session_service.save(session)
+            if self.persona_service is not None:
+                try:
+                    self.persona_service.on_user_message(
+                        scope,
+                        self._content_text(user_message.get("content", "")),
+                    )
+                except Exception:
+                    pass
 
         if (
             self.event_memory_service is not None
@@ -283,6 +294,7 @@ class AgentService:
         reply_job_id: str,
         response_style: str = "short",
         location_requester: LocationRequester | None = None,
+        behavior_policy: dict | None = None,
     ) -> tuple[AgentTurn, MemoryScope, Session, dict]:
         """Generate one complete reply for an already-persisted message batch."""
         if not message_ids:
@@ -365,6 +377,31 @@ class AgentService:
                     tool.location_requester = location_requester
 
         batch_text = ", ".join(message_ids)
+        persona_metadata = self._persona_metadata(scope)
+        batch_user_text = " ".join(
+            self._content_text(message.get("content", ""))
+            for message in batch_messages
+        )
+        persona_prompt = relationship_prompt = behavior_prompt = ""
+        if self.persona_service is not None:
+            try:
+                (
+                    persona_prompt,
+                    relationship_prompt,
+                    behavior_prompt,
+                ) = self.persona_service.build_chat_blocks(
+                    scope,
+                    batch_user_text,
+                    response_style,
+                    has_attachment=any(
+                        isinstance(message.get("content"), list)
+                        for message in batch_messages
+                    ),
+                    allow_silent=True,
+                    policy_override=behavior_policy,
+                )
+            except Exception:
+                persona_prompt = relationship_prompt = behavior_prompt = ""
         context = AgentRunContext(
             session_id=snapshot_session.id,
             scope=scope,
@@ -376,6 +413,7 @@ class AgentService:
                 + "Older user messages marked as already settled are background context, "
                 + "not unanswered requests."
             ),
+            current_message_ids=list(message_ids),
             summary=summary,
             tools=tools,
             onboarding_mode=onboarding_mode,
@@ -386,6 +424,12 @@ class AgentService:
             current_time=self._current_time_text(scope.user_id),
             xiaomi_status_text=self._xiaomi_status_text(scope.user_id),
             response_style=response_style,
+            persona_prompt=persona_prompt,
+            relationship_prompt=relationship_prompt,
+            behavior_prompt=behavior_prompt,
+            persona_id=persona_metadata.get("persona_id"),
+            persona_version=persona_metadata.get("persona_version"),
+            policy_flags=persona_metadata.get("policy_flags"),
         )
         turn = await self.runner.run(context)
         if not (turn.text or "").strip():
@@ -413,6 +457,16 @@ class AgentService:
                     latest.summary_generation = snapshot_session.summary_generation
                 latest.touch()
                 await self.session_service.save(latest)
+                if self.persona_service is not None:
+                    try:
+                        self.persona_service.on_assistant_message(
+                            scope,
+                            turn.text,
+                            source="chat",
+                            source_ref=assistant_message.get("id"),
+                        )
+                    except Exception:
+                        pass
             else:
                 assistant_message = existing_reply
 
@@ -442,6 +496,29 @@ class AgentService:
         ]
         return f"{now.isoformat()} ({tz_name}, {weekdays[now.weekday()]})"
 
+    def _persona_metadata(self, scope: MemoryScope) -> dict:
+        if self.persona_service is None:
+            return {}
+        try:
+            if not self.persona_service.is_enabled(scope):
+                return {}
+            preset = self.persona_service.resolve_preset(scope)
+            version = (
+                getattr(self.settings, "persona_version", "v1")
+                if self.settings is not None
+                else "v1"
+            )
+            return {
+                "persona_id": preset.id,
+                "persona_version": version,
+                "policy_flags": {
+                    "frequency_preset": self.persona_service.frequency_preset(scope),
+                    "open_loop_count": self.persona_service.open_loop_count(scope),
+                },
+            }
+        except Exception:
+            return {}
+
     async def _prepare_turn(
         self,
         session_id: str,
@@ -454,6 +531,14 @@ class AgentService:
         user_message = _chat_message("user", content)
         conversation_context = [dict(message) for message in session.messages[-4:]]
         session.messages.append(user_message)
+        if self.persona_service is not None:
+            try:
+                self.persona_service.on_user_message(
+                    scope,
+                    self._content_text(user_message.get("content", "")),
+                )
+            except Exception:
+                pass
 
         if self.event_memory_service is not None:
             try:
@@ -754,6 +839,27 @@ class AgentService:
             xiaomi_status_text = self._xiaomi_status_text(scope.user_id)
             current_time = self._current_time_text(scope.user_id)
             tools = self.tool_factory(scope)
+            persona_metadata = self._persona_metadata(scope)
+            persona_prompt = relationship_prompt = behavior_prompt = ""
+            if self.persona_service is not None:
+                try:
+                    (
+                        persona_prompt,
+                        relationship_prompt,
+                        behavior_prompt,
+                    ) = self.persona_service.build_chat_blocks(
+                        scope,
+                        content,
+                        infer_response_style(
+                            content,
+                            has_attachment=bool(images or files),
+                            onboarding=onboarding_mode,
+                        ),
+                        has_attachment=bool(images or files),
+                        allow_silent=True,
+                    )
+                except Exception:
+                    persona_prompt = relationship_prompt = behavior_prompt = ""
             context = AgentRunContext(
                 session_id=session.id,
                 scope=scope,
@@ -766,11 +872,20 @@ class AgentService:
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
                 xiaomi_status_text=xiaomi_status_text,
+                current_message_ids=(
+                    [history[-1]["id"]] if history and history[-1].get("id") else []
+                ),
                 response_style=infer_response_style(
                     content,
                     has_attachment=bool(images or files),
                     onboarding=onboarding_mode,
                 ),
+                persona_prompt=persona_prompt,
+                relationship_prompt=relationship_prompt,
+                behavior_prompt=behavior_prompt,
+                persona_id=persona_metadata.get("persona_id"),
+                persona_version=persona_metadata.get("persona_version"),
+                policy_flags=persona_metadata.get("policy_flags"),
             )
             turn = await self.runner.run(context)
 
@@ -783,6 +898,16 @@ class AgentService:
             session.last_prompt_tokens = int(turn.usage.get("prompt_tokens") or 0)
             session.touch()
             await self.session_service.save(session)
+            if self.persona_service is not None:
+                try:
+                    self.persona_service.on_assistant_message(
+                        scope,
+                        turn.text,
+                        source="chat",
+                        source_ref=session.messages[-1].get("id"),
+                    )
+                except Exception:
+                    pass
             if self.dense_onboarding_hook is not None:
                 asyncio.create_task(
                     self.dense_onboarding_hook(scope.user_id, scope.agent_id)
@@ -825,6 +950,27 @@ class AgentService:
                 for tool in tools:
                     if isinstance(tool, LocationTool):
                         tool.location_requester = location_requester
+            persona_metadata = self._persona_metadata(scope)
+            persona_prompt = relationship_prompt = behavior_prompt = ""
+            if self.persona_service is not None:
+                try:
+                    (
+                        persona_prompt,
+                        relationship_prompt,
+                        behavior_prompt,
+                    ) = self.persona_service.build_chat_blocks(
+                        scope,
+                        content,
+                        infer_response_style(
+                            content,
+                            has_attachment=bool(images or files),
+                            onboarding=onboarding_mode,
+                        ),
+                        has_attachment=bool(images or files),
+                        allow_silent=True,
+                    )
+                except Exception:
+                    persona_prompt = relationship_prompt = behavior_prompt = ""
             context = AgentRunContext(
                 session_id=session.id,
                 scope=scope,
@@ -837,11 +983,20 @@ class AgentService:
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
                 xiaomi_status_text=xiaomi_status_text,
+                current_message_ids=(
+                    [history[-1]["id"]] if history and history[-1].get("id") else []
+                ),
                 response_style=infer_response_style(
                     content,
                     has_attachment=bool(images or files),
                     onboarding=onboarding_mode,
                 ),
+                persona_prompt=persona_prompt,
+                relationship_prompt=relationship_prompt,
+                behavior_prompt=behavior_prompt,
+                persona_id=persona_metadata.get("persona_id"),
+                persona_version=persona_metadata.get("persona_version"),
+                policy_flags=persona_metadata.get("policy_flags"),
             )
 
             turn: AgentTurn | None = None
@@ -861,6 +1016,16 @@ class AgentService:
                 session.last_prompt_tokens = int(turn.usage.get("prompt_tokens") or 0)
                 session.touch()
                 await self.session_service.save(session)
+                if self.persona_service is not None:
+                    try:
+                        self.persona_service.on_assistant_message(
+                            scope,
+                            turn.text or "",
+                            source="chat",
+                            source_ref=session.messages[-1].get("id"),
+                        )
+                    except Exception:
+                        pass
                 if self.dense_onboarding_hook is not None:
                     asyncio.create_task(
                         self.dense_onboarding_hook(scope.user_id, scope.agent_id)

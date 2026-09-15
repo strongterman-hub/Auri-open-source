@@ -60,6 +60,8 @@ from app.observation.registry import (
     ObservationSourceRegistry,
 )
 from app.observation.store import ObservationStore
+from app.persona.service import PersonaService
+from app.persona.store import PersonaStore
 from app.proactive.delivery import ProactiveDelivery
 from app.proactive.context import (
     ProactiveAuditLogger,
@@ -156,6 +158,7 @@ class Container:
     weather_service: WeatherService
     todo_store: TodoStore
     timezone_resolver: TimezoneResolver
+    persona_service: PersonaService
 
 
 def create_container(settings: Settings) -> Container:
@@ -208,6 +211,18 @@ def create_container(settings: Settings) -> Container:
     )
 
     memory_db_path = settings.data_dir / "memory" / "memory.db"
+    persona_store = PersonaStore(
+        memory_db_path,
+        open_loop_ttl_hours=settings.chat_open_loop_ttl_hours,
+        important_open_loop_ttl_hours=settings.chat_open_loop_important_ttl_hours,
+    )
+    persona_service = PersonaService(
+        store=persona_store,
+        settings=settings,
+        presets_dir=(
+            Path(settings.persona_presets_dir) if settings.persona_presets_dir else None
+        ),
+    )
     observation_store = ObservationStore(memory_db_path)
     observation_service = ObservationService(observation_store)
     event_store = EventMemoryStore(memory_db_path)
@@ -218,7 +233,10 @@ def create_container(settings: Settings) -> Container:
     )
     intent_store = IntentStore(memory_db_path)
     told_store = ToldStore(memory_db_path)
-    device_store = DeviceStore(settings.data_dir / "devices" / "devices.db")
+    device_store = DeviceStore(
+        settings.data_dir / "devices" / "devices.db",
+        location_history_limit=settings.location_history_limit,
+    )
     presence_service = PresenceService(device_store=device_store)
     todo_store = TodoStore(settings.data_dir / "todos" / "todos.db")
     timezone_store = UserTimezoneStore(
@@ -380,6 +398,7 @@ def create_container(settings: Settings) -> Container:
         llm,
         model=settings.chat_reply_planner_model,
         max_tokens=settings.chat_reply_planner_max_tokens,
+        persona_service=persona_service,
     )
     proactive_context_builder = ProactiveContextBuilder(
         schedule_service=schedule_service,
@@ -449,6 +468,7 @@ def create_container(settings: Settings) -> Container:
         timezone_store=timezone_store,
         event_store=event_store,
         chat_reply_store=chat_reply_store,
+        persona_store=persona_store,
     )
     agent_runner = BasicAgentRunner(
         llm,
@@ -538,6 +558,7 @@ def create_container(settings: Settings) -> Container:
                 user_id=scope.user_id,
                 agent_id=scope.agent_id,
                 max_age_seconds=600,
+                max_points=settings.location_context_max_points,
             ),
         ]
 
@@ -575,6 +596,7 @@ def create_container(settings: Settings) -> Container:
         event_memory_service=(
             event_memory_service if settings.event_memory_enabled else None
         ),
+        persona_service=persona_service,
     )
 
     if settings.jpush_app_key and settings.jpush_master_secret:
@@ -622,6 +644,7 @@ def create_container(settings: Settings) -> Container:
         gate_logger=proactive_gate_logger,
         has_pending_chat=chat_reply_store.has_open,
         sleep_context=sleep_context,
+        persona_service=persona_service,
     )
 
     chat_reply_service = ChatReplyService(
@@ -735,4 +758,5 @@ def create_container(settings: Settings) -> Container:
         weather_service=weather_service,
         todo_store=todo_store,
         timezone_resolver=timezone_resolver,
+        persona_service=persona_service,
     )
