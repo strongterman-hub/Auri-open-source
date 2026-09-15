@@ -9,12 +9,15 @@ from app.memory.models import MemoryScope
 from app.persona.card import (
     DEFAULT_PRESET_ID,
     apply_overrides,
+    apply_presentation,
     builtin_presets,
+    load_characters,
     load_presets,
 )
 from app.persona.models import (
     FREQUENCY_DAILY_LIMITS,
     AgentNote,
+    CharacterCard,
     BehaviorPolicy,
     OpenLoop,
     PersonaOverrides,
@@ -57,6 +60,7 @@ class PersonaService:
         store: PersonaStore,
         settings: Settings,
         presets_dir: Path | None = None,
+        characters_dir: Path | None = None,
     ) -> None:
         self.store = store
         self.settings = settings
@@ -64,11 +68,47 @@ class PersonaService:
             presets_dir or self._default_presets_dir(),
             default_id=settings.persona_default_preset or DEFAULT_PRESET_ID,
         )
+        self.characters = load_characters(
+            characters_dir or self._default_characters_dir()
+        )
         self._canary = _parse_csv(settings.persona_canary_user_ids)
+        self._portrait_service: Any = None
 
     @staticmethod
     def _default_presets_dir() -> Path:
         return Path(__file__).resolve().parent / "presets"
+
+    @staticmethod
+    def _default_characters_dir() -> Path:
+        return Path(__file__).resolve().parent / "characters"
+
+    def attach_portrait_service(self, portrait_service: Any) -> None:
+        """Wire the smart-background service after both are constructed."""
+
+        self._portrait_service = portrait_service
+
+    def resolve_presentation(self, scope: MemoryScope) -> str | None:
+        selection = self.store.get_user_persona(scope.user_id, scope.agent_id)
+        if selection is None:
+            return None
+        value = selection.overrides.presentation
+        return value if value in ("female", "male") else None
+
+    def active_character(self, scope: MemoryScope) -> CharacterCard | None:
+        """Return the character card only when the portrait rollout reaches this user."""
+
+        if self._portrait_service is None:
+            return None
+        try:
+            if not self._portrait_service.can_use_characters(scope):
+                return None
+        except Exception:
+            return None
+        presentation = (
+            self.resolve_presentation(scope)
+            or str(self.settings.portrait_default_presentation or "female")
+        )
+        return self.characters.get(presentation)
 
     def is_enabled(self, scope: MemoryScope) -> bool:
         if not self.settings.persona_enabled:
@@ -88,9 +128,11 @@ class PersonaService:
         fallback = self.presets.get(default_id) or builtin_presets()[DEFAULT_PRESET_ID]
         selection = self.store.get_user_persona(scope.user_id, scope.agent_id)
         if selection is None:
-            return fallback
-        base = self.presets.get(selection.preset_id) or fallback
-        return apply_overrides(base, selection.overrides)
+            preset = fallback
+        else:
+            base = self.presets.get(selection.preset_id) or fallback
+            preset = apply_overrides(base, selection.overrides)
+        return apply_presentation(preset, self.active_character(scope))
 
     def relationship_state(self, scope: MemoryScope) -> RelationshipState:
         state = self.store.get_relationship_state(scope.user_id, scope.agent_id)
@@ -178,7 +220,7 @@ class PersonaService:
                 open_loop_count=self.open_loop_count(scope),
             )
         return (
-            stable_persona_block(preset),
+            stable_persona_block(preset, self.active_character(scope)),
             relationship_block(
                 relationship,
                 open_loop_count=policy.open_loop_count,
@@ -192,7 +234,7 @@ class PersonaService:
         preset = self.resolve_preset(scope)
         relationship = self.relationship_state(scope)
         blocks = [
-            stable_persona_block(preset),
+            stable_persona_block(preset, self.active_character(scope)),
             relationship_block(
                 relationship,
                 open_loop_count=self.open_loop_count(scope),
@@ -229,7 +271,7 @@ class PersonaService:
         )
         open_loops = self.open_loop_count(scope)
         return {
-            "persona_prompt": stable_persona_block(preset),
+            "persona_prompt": stable_persona_block(preset, self.active_character(scope)),
             "relationship_prompt": relationship_block(
                 relationship,
                 open_loop_count=open_loops,
@@ -265,6 +307,11 @@ class PersonaService:
             return
         self.store.expire_open_loops(scope.user_id, scope.agent_id)
         self.store.close_latest_open_loop(scope.user_id, scope.agent_id)
+        if self._portrait_service is not None:
+            try:
+                self._portrait_service.observe_user_text(scope, text)
+            except Exception:
+                pass
         updates = infer_relationship_updates(text)
         if not updates:
             return

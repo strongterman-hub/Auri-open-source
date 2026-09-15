@@ -11,6 +11,7 @@ from app.api.routes import (
     memory,
     observations,
     persona,
+    portrait,
     presence,
     proactive,
     profile,
@@ -36,6 +37,7 @@ api_router.include_router(
 )
 api_router.include_router(presence.router)
 api_router.include_router(persona.router)
+api_router.include_router(portrait.router)
 api_router.include_router(profile.router)
 api_router.include_router(proactive.router)
 api_router.include_router(told.router)

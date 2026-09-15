@@ -4,7 +4,12 @@ import json
 import logging
 from pathlib import Path
 
-from app.persona.models import PersonaOverrides, PersonaPreset
+from app.persona.models import (
+    PRESENTATIONS,
+    CharacterCard,
+    PersonaOverrides,
+    PersonaPreset,
+)
 
 
 logger = logging.getLogger("auri.persona")
@@ -188,6 +193,40 @@ _BUILTIN_PRESETS: dict[str, PersonaPreset] = {
 }
 
 
+_BUILTIN_CHARACTERS: dict[str, CharacterCard] = {
+    "female": CharacterCard(
+        presentation="female",
+        label="女",
+        appearance=(
+            "22-24 岁东方女性，及肩黑色直发、发梢一小撮极光紫挑染，"
+            "暖青绿眼睛，米白宽松针织开衫，极光青围巾，干净安静。"
+        ),
+        speech_quirks=[
+            "偶尔会说「我看看」「嗯——让我想想」，用语气词把句子放软",
+            "关心时先问感受，再补事实",
+        ],
+        interests=["手冲咖啡", "独立书店", "散步", "记录天气"],
+        emoji_offset=0,
+        address_hint="称呼保持现状，不主动升级亲密称呼",
+    ),
+    "male": CharacterCard(
+        presentation="male",
+        label="男",
+        appearance=(
+            "23-25 岁东方男性，黑色短碎发、右侧鬓角上方一小撮极光紫挑染，"
+            "暖青绿眼睛，米白针织衫或深灰夹克，干净松弛。"
+        ),
+        speech_quirks=[
+            "偶尔会说「行」「我记着了」，句子更短、语气更平",
+            "关心时先确认事实，再补一句感受",
+        ],
+        interests=["骑行", "机械键盘", "夜跑", "修东西"],
+        emoji_offset=-1,
+        address_hint="称呼保持现状，不主动升级亲密称呼",
+    ),
+}
+
+
 def builtin_presets() -> dict[str, PersonaPreset]:
     return {key: value.model_copy(deep=True) for key, value in _BUILTIN_PRESETS.items()}
 
@@ -223,6 +262,59 @@ def load_presets(
     return presets
 
 
+def builtin_characters() -> dict[str, CharacterCard]:
+    return {key: value.model_copy(deep=True) for key, value in _BUILTIN_CHARACTERS.items()}
+
+
+def load_characters(
+    characters_dir: Path | None,
+) -> dict[str, CharacterCard]:
+    """Load built-in character cards, then overlay JSON files by presentation."""
+
+    characters = builtin_characters()
+    if characters_dir is not None:
+        directory = Path(characters_dir)
+        if directory.exists() and directory.is_dir():
+            for path in sorted(directory.glob("*.json")):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    card = CharacterCard(**payload)
+                    if card.presentation in PRESENTATIONS:
+                        characters[card.presentation] = card
+                except Exception:
+                    logger.exception("failed to load character card %s", path)
+    return characters
+
+
+def apply_presentation(
+    preset: PersonaPreset,
+    character: CharacterCard | None,
+) -> PersonaPreset:
+    """Layer one character card on top of a preset without touching disk."""
+
+    if character is None:
+        return preset
+    emoji_levels = ("off", "low", "medium")
+    index = emoji_levels.index(preset.emoji_level) if preset.emoji_level in emoji_levels else 1
+    index = max(0, min(len(emoji_levels) - 1, index + int(character.emoji_offset or 0)))
+    updates: dict[str, object] = {"emoji_level": emoji_levels[index]}
+    if character.speech_quirks:
+        speech = list(preset.speech_style)
+        for quirk in character.speech_quirks:
+            value = str(quirk).strip()
+            if value and value not in speech:
+                speech.append(value)
+        updates["speech_style"] = speech
+    if character.interests:
+        interests = list(preset.interests)
+        for interest in character.interests:
+            value = str(interest).strip()
+            if value and value not in interests:
+                interests.append(value)
+        updates["interests"] = interests
+    return preset.model_copy(update=updates)
+
+
 def apply_overrides(
     preset: PersonaPreset,
     overrides: PersonaOverrides | None,
@@ -230,6 +322,8 @@ def apply_overrides(
     if overrides is None:
         return preset
     updates = overrides.model_dump(exclude_none=True)
+    # Presentation is a separate character dimension, never a preset field.
+    updates.pop("presentation", None)
     if not updates:
         return preset
     return preset.model_copy(update=updates)

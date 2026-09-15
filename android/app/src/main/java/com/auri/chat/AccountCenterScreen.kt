@@ -105,6 +105,11 @@ fun AccountCenterScreen(
     var deleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     var creditsBalance by remember { mutableStateOf<String?>(null) }
+    val portraitStore = remember { PortraitStore(context) }
+    var portraitAvailable by remember { mutableStateOf(false) }
+    var smartBackgroundEnabled by remember {
+        mutableStateOf(portraitStore.isSmartBackgroundEnabled())
+    }
     val backgroundSettingsProfile = remember { currentBackgroundSettingsProfile() }
 
     if (showPrivacyPolicy) {
@@ -113,6 +118,18 @@ fun AccountCenterScreen(
 
     LaunchedEffect(Unit) {
         onRefreshVersion()
+    }
+
+    LaunchedEffect(Unit) {
+        val token = authStore.getToken() ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching { AuriApi().getPortraitSettings(token) }
+        }.onSuccess { json ->
+            portraitAvailable = json.optBoolean("available", false)
+            val enabled = json.optBoolean("smart_background_enabled", true)
+            smartBackgroundEnabled = enabled
+            portraitStore.setSmartBackgroundEnabled(enabled)
+        }
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -341,6 +358,33 @@ fun AccountCenterScreen(
                             }
                         },
                     )
+                    if (portraitAvailable) {
+                        PermissionSwitchRow(
+                            icon = Icons.Outlined.Settings,
+                            title = "智能背景",
+                            subtitle = "背景会随时间和你的状态变化。关闭后使用默认渐变背景。",
+                            checked = smartBackgroundEnabled,
+                            onCheckedChange = { enabled ->
+                                smartBackgroundEnabled = enabled
+                                portraitStore.setSmartBackgroundEnabled(enabled)
+                                if (!enabled) portraitStore.clear()
+                                val token = authStore.getToken()
+                                if (token != null) {
+                                    scope.launch {
+                                        val ok = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                AuriApi().updatePortraitSettings(enabled, token)
+                                            }.isSuccess
+                                        }
+                                        if (!ok) {
+                                            smartBackgroundEnabled = !enabled
+                                            portraitStore.setSmartBackgroundEnabled(!enabled)
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    }
                     if (BuildConfig.KEEP_ALIVE_ENABLED && backgroundSettingsProfile != null) {
                         PermissionActionRow(
                             icon = Icons.Outlined.Settings,

@@ -149,6 +149,17 @@ class AuriApi(
         return request("PUT", "/proactive/settings", body, token)
     }
 
+    fun getPortraitCurrent(token: String): JSONObject =
+        request("GET", "/portrait/current", null, token)
+
+    fun getPortraitSettings(token: String): JSONObject =
+        request("GET", "/portrait/settings", null, token)
+
+    fun updatePortraitSettings(enabled: Boolean, token: String): JSONObject {
+        val body = JSONObject().put("smart_background_enabled", enabled).toString()
+        return request("PUT", "/portrait/settings", body, token)
+    }
+
     fun registerDevice(registrationId: String, token: String): JSONObject {
         val body = JSONObject().put("token", registrationId).toString()
         return request("POST", "/devices", body, token)

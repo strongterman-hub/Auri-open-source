@@ -1,5 +1,14 @@
 # 版本与验证记录
 
+## 2026-09-15：人设形象与动态背景（Android 0.3.31）
+
+- 新增 female / male 形象维度与 `CharacterCard`，与现有四个性格预设正交；聊天与主动提示词会附加少量口癖、兴趣和 emoji 偏移。
+- 服务端新增确定性背景解析：按用户时区、睡前睡眠分、30 分钟内运动、6 小时内情绪信号和关系阶段，从 12 个变体中选图；`portrait_state` / `portrait_settings` 表与 `user_persona.presentation` 列均幂等迁移。
+- 新增 `GET /v1/portrait/current`、`GET/PUT /v1/portrait/settings`；关闭或未灰度账号返回 `enabled=false` 与安全兜底，不写状态。
+- Android 0.3.31 引入 Coil 2.6.0，聊天页背景 400ms 交叉淡入并保留 Aurora 渐变遮罩；账号中心新增「智能背景」开关，接口失败静默回退渐变。
+- 公开服务端完整回归 387 passed，另 1 项 `test_understanding` 为本机既有 httpx 代理端口解析环境失败；portrait / persona 专项 22 passed。公开 Android `assembleStoreDebug` 与 19 项 JVM 单测通过。
+- 公开仓库只包含程序生成的渐变占位图（48 张，约 0.44 MB），不包含 Qwen 生成的真实角色成图；默认 `AURI_PORTRAIT_ENABLED=false`，启用后建议先用 `AURI_PORTRAIT_CANARY_USER_IDS` 灰度。
+
 ## 2026-09-15：可配置人设与关系行为第一版
 
 - 新增 `app/persona/`：可配置 JSON 人设预设、关系状态、open loops、逐轮行为策略和提示词块；内置 `warm_friend`、`playful`、`calm`、`efficient` 四个预设，部署可覆盖。

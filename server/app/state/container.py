@@ -60,6 +60,7 @@ from app.observation.registry import (
     ObservationSourceRegistry,
 )
 from app.observation.store import ObservationStore
+from app.persona.portrait_service import PortraitService
 from app.persona.service import PersonaService
 from app.persona.store import PersonaStore
 from app.proactive.delivery import ProactiveDelivery
@@ -159,6 +160,7 @@ class Container:
     todo_store: TodoStore
     timezone_resolver: TimezoneResolver
     persona_service: PersonaService
+    portrait_service: PortraitService
 
 
 def create_container(settings: Settings) -> Container:
@@ -222,6 +224,11 @@ def create_container(settings: Settings) -> Container:
         presets_dir=(
             Path(settings.persona_presets_dir) if settings.persona_presets_dir else None
         ),
+        characters_dir=(
+            Path(settings.portrait_characters_dir)
+            if settings.portrait_characters_dir
+            else None
+        ),
     )
     observation_store = ObservationStore(memory_db_path)
     observation_service = ObservationService(observation_store)
@@ -247,6 +254,16 @@ def create_container(settings: Settings) -> Container:
         default_timezone=settings.default_timezone,
     )
     resolve_user_tz = lambda user_id: timezone_resolver.get(user_id)
+    portrait_service = PortraitService(
+        store=persona_store,
+        settings=settings,
+        sleep_score_store=sleep_score_store,
+        health_store=health_store,
+        timezone_resolver=timezone_resolver,
+        relationship_provider=persona_service.relationship_state,
+        presentation_provider=persona_service.resolve_presentation,
+    )
+    persona_service.attach_portrait_service(portrait_service)
     schedule_service = ScheduleService(
         settings.data_dir / "schedule" / "schedule.db", resolve_user_tz
     )
@@ -759,4 +776,5 @@ def create_container(settings: Settings) -> Container:
         todo_store=todo_store,
         timezone_resolver=timezone_resolver,
         persona_service=persona_service,
+        portrait_service=portrait_service,
     )

@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     persona_canary_user_ids: str = ""
     persona_version: str = "v1"
     persona_prompt_max_chars: int = 900
+    # Smart portrait background. Images are static files served by the same
+    # FastAPI app; the server only resolves which variant a client should show.
+    portrait_enabled: bool = False
+    portrait_canary_user_ids: str = ""
+    portrait_default_presentation: str = "female"
+    portrait_characters_dir: str | None = None
+    portrait_mood_ttl_hours: int = 6
+    portrait_refresh_seconds: int = 900
+    portrait_sleep_tired_threshold: int = 60
+    portrait_active_window_minutes: int = 30
     # Background consolidation (dreaming-lite). Write approval is reserved and
     # not yet enforced by the memory tool.
     memory_consolidation_max_candidates: int = 10

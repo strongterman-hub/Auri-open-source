@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from app.persona.models import BehaviorPolicy, PersonaPreset, RelationshipState
+from app.persona.models import (
+    BehaviorPolicy,
+    CharacterCard,
+    PersonaPreset,
+    RelationshipState,
+)
 
 
 STYLE_LABELS = {
@@ -18,7 +23,10 @@ def _bullets(items: Iterable[str], limit: int) -> str:
     return "\n".join(f"- {item}" for item in values[:limit])
 
 
-def stable_persona_block(preset: PersonaPreset) -> str:
+def stable_persona_block(
+    preset: PersonaPreset,
+    character: CharacterCard | None = None,
+) -> str:
     if preset.prompt_override:
         return "[PERSONA - ACTIVE PRESET]\n" + preset.prompt_override.strip()[:800]
     lines = [
@@ -26,6 +34,13 @@ def stable_persona_block(preset: PersonaPreset) -> str:
         f"预设：{preset.id} / {preset.name}",
         f"身份：{preset.identity}",
     ]
+    if character is not None:
+        label = character.label or character.presentation
+        lines.append(f"形象：Auri（{label}）")
+        if character.interests:
+            lines.append("兴趣偏向：" + "、".join(character.interests[:5]))
+        if character.address_hint:
+            lines.append(f"称呼倾向：{character.address_hint}")
     if preset.temperament:
         lines.append("性格：")
         lines.append(_bullets(preset.temperament, 4))

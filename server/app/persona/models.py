@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 
+PRESENTATIONS: tuple[str, ...] = ("female", "male")
 STYLE_ORDER: tuple[str, ...] = ("micro", "short", "normal", "detailed")
 STYLE_RANK = {name: index for index, name in enumerate(STYLE_ORDER)}
 FREQUENCY_PRESETS: tuple[str, ...] = ("quiet", "normal", "high", "intensive")
@@ -73,6 +74,26 @@ class PersonaOverrides(BaseModel):
     allow_disagreement: bool | None = None
     allow_uncertainty: bool | None = None
     prompt_override: str | None = None
+    presentation: Literal["female", "male"] | None = None
+
+
+class CharacterCard(BaseModel):
+    """A presentation-level character card (female / male Auri).
+
+    The card never changes the brand name or the preset's core temperament;
+    it only adds a small, explicit layer used by the prompt and portrait
+    variant resolver.
+    """
+
+    presentation: Literal["female", "male"] = "female"
+    version: str = "v1"
+    display_name: str = "Auri"
+    label: str = "女"
+    appearance: str = ""
+    speech_quirks: list[str] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list)
+    emoji_offset: int = 0
+    address_hint: str = ""
 
 
 class UserPersonaSelection(BaseModel):
@@ -114,6 +135,28 @@ class AgentNote(BaseModel):
     source_ref: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None
+
+
+class PortraitState(BaseModel):
+    """One resolved smart-background state for a user."""
+
+    variant: str = "day_gentle"
+    presentation: str = "female"
+    time_slot: str = "day"
+    mood: str = "neutral"
+    stage: str = "warming"
+    reason: str = ""
+    mood_hint: str | None = None
+    mood_hint_at: datetime | None = None
+    signals: dict[str, Any] = Field(default_factory=dict)
+    resolved_at: datetime = Field(default_factory=_utcnow)
+
+
+class PortraitSettings(BaseModel):
+    """Per-user smart-background preference."""
+
+    smart_background_enabled: bool = True
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class BehaviorPolicy(BaseModel):

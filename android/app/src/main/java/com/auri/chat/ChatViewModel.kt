@@ -31,6 +31,8 @@ import java.time.ZoneId
 import java.util.UUID
 
 private const val PAGE_SIZE = 10
+private const val PORTRAIT_DEFAULT_POLL_MS = 15 * 60_000L
+private const val PORTRAIT_MIN_POLL_MS = 5 * 60_000L
 
 private fun deviceTimezoneId(): String = ZoneId.systemDefault().id
 
@@ -329,6 +331,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val authStore = AuthStore(application)
     private val deviceStore = DeviceStore(application)
     private val locationProvider = LocationProvider(application)
+    private val portraitStore = PortraitStore(application)
     private val messageDao = AuriDatabase.get(application).chatMessageDao()
     @Volatile
     private var chatVisible = false
@@ -345,6 +348,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var isComposing = false
     @Volatile
     private var isDeviceRegistrationInFlight = false
+    @Volatile
+    private var portraitPollMs = PORTRAIT_DEFAULT_POLL_MS
 
     private val _messages = mutableStateListOf<ChatMessage>()
     val messages: List<ChatMessage> get() = _messages
@@ -366,6 +371,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var proactiveEnabled by mutableStateOf(false)
         private set
 
+    var portrait by mutableStateOf<PortraitBackground?>(null)
+        private set
+
     init {
         viewModelScope.launch {
             val cached = withContext(Dispatchers.IO) { messageDao.getAll() }
@@ -379,6 +387,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
             refreshFromServer()
             refreshProactiveEnabled()
+            portrait = portraitStore.load()
+            refreshPortrait()
             runCatching { heartbeatAndPollInbox() }
                 .onFailure { Log.e("AuriApi", "proactive poll failed", it) }
             runCatching { pollChatUpdates() }
@@ -408,6 +418,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             nextChatPollMs = CHAT_QUEUED_POLL_MS
                             Log.e("AuriApi", "chat update poll failed", it)
                         }
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                delay(portraitPollMs)
+                if (appInForeground && chatVisible) {
+                    refreshPortrait()
                 }
             }
         }
@@ -460,6 +478,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshFromServer() {
+        refreshPortrait()
         if (isRefreshing) return
         isRefreshing = true
         viewModelScope.launch {
@@ -719,6 +738,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearNotice() {
         notice = null
+    }
+
+    fun refreshPortrait() {
+        val token = authStore.getToken() ?: return
+        viewModelScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { api.getPortraitCurrent(token) }.getOrNull()
+            } ?: return@launch
+            val resolved = parsePortrait(response)
+            if (resolved == null) {
+                portrait = null
+                portraitStore.clear()
+                return@launch
+            }
+            portrait = resolved
+            portraitStore.save(resolved)
+            portraitPollMs = (resolved.expiresInSeconds * 1000L)
+                .coerceAtLeast(PORTRAIT_MIN_POLL_MS)
+        }
     }
 
     fun refreshProactiveEnabled() {

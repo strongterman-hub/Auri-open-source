@@ -91,4 +91,4 @@ keyPassword=YOUR_KEY_PASSWORD
 
 账号中心仅对已识别的系统显示品牌化后台入口：小米/Redmi/POCO、OPPO/一加/realme、vivo/iQOO、华为、荣耀、三星和魅族分别使用本品牌文案。私有 Activity 无法解析或启动失败时回退应用详情；未知品牌不显示猜测性的“自启动”。这些入口只能引导用户进入设置，Android 没有统一 API 可证明 OEM 后台权限已经打开。
 
-本地构建成功不代表实机通知、定位、邮件收件、支付回调和升级安装已通过，分别记录验证范围。
+本地构建成功不代表实机通知、定位、邮件收件、支付回调和升级安装已通过，分别记录验证范围。\n## 智能背景\n\n0.3.31 起 Android 引入 Coil 2.6.0：聊天页通过 `GET /v1/portrait/current` 获取背景，变体变化时 400ms 交叉淡入，图片上保留 Aurora 渐变遮罩；冷启动先读 SharedPreferences 缓存，失败或未灰度时静默回退默认渐变。账号中心在位置权限下方提供「智能背景」开关，对应 `GET/PUT /v1/portrait/settings`。自部署需要把 `server/app/static/portrait/` 放入真实或占位图片。\n

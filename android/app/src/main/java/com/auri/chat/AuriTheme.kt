@@ -1,5 +1,7 @@
 package com.auri.chat
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -11,9 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 
 object AuriTokens {
     val Background = Color(0xFF0B0D13)
@@ -116,20 +120,39 @@ fun AuriTheme(content: @Composable () -> Unit) {
 @Composable
 fun AuriBackground(
     modifier: Modifier = Modifier,
+    portrait: PortraitBackground? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        AuriTokens.AuroraTop,
-                        AuriTokens.Background,
-                        AuriTokens.AuroraBottom,
+    Box(modifier = modifier.fillMaxSize()) {
+        Crossfade(
+            targetState = portrait,
+            animationSpec = tween(durationMillis = 400),
+            label = "auri-portrait-background",
+        ) { visible ->
+            if (visible != null) {
+                AsyncImage(
+                    model = visible.imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        // The aurora scrim always stays on top of the photo so bubbles and
+        // text keep their existing contrast even if an image is loading.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            AuriTokens.AuroraTop.copy(alpha = 0.85f),
+                            AuriTokens.Background.copy(alpha = 0.70f),
+                            AuriTokens.AuroraBottom.copy(alpha = 0.90f),
+                        ),
                     ),
                 ),
-            ),
-        content = content,
-    )
+        )
+        content()
+    }
 }

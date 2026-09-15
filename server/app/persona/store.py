@@ -10,6 +10,8 @@ from app.persona.models import (
     AgentNote,
     OpenLoop,
     PersonaOverrides,
+    PortraitSettings,
+    PortraitState,
     RelationshipState,
     UserPersonaSelection,
 )
@@ -97,6 +99,7 @@ class PersonaStore:
                     agent_id TEXT NOT NULL DEFAULT 'default',
                     preset_id TEXT NOT NULL,
                     overrides_json TEXT NOT NULL DEFAULT '{}',
+                    presentation TEXT,
                     selected_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, agent_id)
@@ -138,6 +141,45 @@ class PersonaStore:
                     source_ref TEXT,
                     created_at TEXT NOT NULL,
                     expires_at TEXT
+                )
+                """
+            )
+            # Idempotent column add for databases created before the portrait work.
+            persona_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(user_persona)")
+            }
+            if "presentation" not in persona_columns:
+                connection.execute(
+                    "ALTER TABLE user_persona ADD COLUMN presentation TEXT"
+                )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portrait_state (
+                    user_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT 'default',
+                    variant TEXT NOT NULL,
+                    presentation TEXT NOT NULL,
+                    time_slot TEXT NOT NULL,
+                    mood TEXT NOT NULL,
+                    mood_hint TEXT,
+                    mood_hint_at TEXT,
+                    stage TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    signals_json TEXT NOT NULL DEFAULT '{}',
+                    resolved_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, agent_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portrait_settings (
+                    user_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT 'default',
+                    smart_background_enabled INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, agent_id)
                 )
                 """
             )
@@ -232,6 +274,8 @@ class PersonaStore:
             overrides_payload = json.loads(row["overrides_json"] or "{}")
         except (TypeError, ValueError):
             overrides_payload = {}
+        if not overrides_payload.get("presentation") and row["presentation"]:
+            overrides_payload["presentation"] = row["presentation"]
         return UserPersonaSelection(
             preset_id=row["preset_id"],
             overrides=PersonaOverrides(**overrides_payload),
@@ -250,12 +294,13 @@ class PersonaStore:
             connection.execute(
                 """
                 INSERT INTO user_persona
-                    (user_id, agent_id, preset_id, overrides_json,
+                    (user_id, agent_id, preset_id, overrides_json, presentation,
                      selected_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, agent_id) DO UPDATE SET
                     preset_id = excluded.preset_id,
                     overrides_json = excluded.overrides_json,
+                    presentation = excluded.presentation,
                     selected_at = excluded.selected_at,
                     updated_at = excluded.updated_at
                 """,
@@ -267,8 +312,160 @@ class PersonaStore:
                         selection.overrides.model_dump(exclude_none=True),
                         ensure_ascii=False,
                     ),
+                    selection.overrides.presentation,
                     selection.selected_at.isoformat(),
                     now,
+                ),
+            )
+
+    def get_portrait_state(
+        self,
+        user_id: str,
+        agent_id: str = "default",
+    ) -> PortraitState | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM portrait_state
+                WHERE user_id = ? AND agent_id = ?
+                """,
+                (user_id, agent_id),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            signals = json.loads(row["signals_json"] or "{}")
+        except (TypeError, ValueError):
+            signals = {}
+        return PortraitState(
+            variant=row["variant"] or "day_gentle",
+            presentation=row["presentation"] or "female",
+            time_slot=row["time_slot"] or "day",
+            mood=row["mood"] or "neutral",
+            stage=row["stage"] or "warming",
+            reason=row["reason"] or "",
+            mood_hint=row["mood_hint"],
+            mood_hint_at=_parse_dt(row["mood_hint_at"]),
+            signals=signals if isinstance(signals, dict) else {},
+            resolved_at=_parse_dt(row["resolved_at"]) or _utcnow(),
+        )
+
+    def save_portrait_state(
+        self,
+        user_id: str,
+        agent_id: str,
+        state: PortraitState,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO portrait_state
+                    (user_id, agent_id, variant, presentation, time_slot, mood,
+                     mood_hint, mood_hint_at, stage, reason, signals_json,
+                     resolved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, agent_id) DO UPDATE SET
+                    variant = excluded.variant,
+                    presentation = excluded.presentation,
+                    time_slot = excluded.time_slot,
+                    mood = excluded.mood,
+                    mood_hint = excluded.mood_hint,
+                    mood_hint_at = excluded.mood_hint_at,
+                    stage = excluded.stage,
+                    reason = excluded.reason,
+                    signals_json = excluded.signals_json,
+                    resolved_at = excluded.resolved_at
+                """,
+                (
+                    user_id,
+                    agent_id,
+                    state.variant,
+                    state.presentation,
+                    state.time_slot,
+                    state.mood,
+                    state.mood_hint,
+                    state.mood_hint_at.isoformat() if state.mood_hint_at else None,
+                    state.stage,
+                    state.reason,
+                    json.dumps(state.signals, ensure_ascii=False),
+                    state.resolved_at.isoformat(),
+                ),
+            )
+
+    def save_mood_hint(
+        self,
+        user_id: str,
+        agent_id: str,
+        mood: str,
+        observed_at: datetime,
+        *,
+        presentation: str = "female",
+    ) -> None:
+        now = observed_at.isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE portrait_state
+                SET mood_hint = ?, mood_hint_at = ?
+                WHERE user_id = ? AND agent_id = ?
+                """,
+                (mood, now, user_id, agent_id),
+            )
+            if cursor.rowcount:
+                return
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO portrait_state
+                    (user_id, agent_id, variant, presentation, time_slot, mood,
+                     mood_hint, mood_hint_at, stage, reason, signals_json,
+                     resolved_at)
+                VALUES (?, ?, 'day_gentle', ?, 'day', 'neutral', ?, ?, 'warming',
+                        'mood_observed', '{}', ?)
+                """,
+                (user_id, agent_id, presentation, mood, now, now),
+            )
+
+    def get_portrait_settings(
+        self,
+        user_id: str,
+        agent_id: str = "default",
+    ) -> PortraitSettings:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM portrait_settings
+                WHERE user_id = ? AND agent_id = ?
+                """,
+                (user_id, agent_id),
+            ).fetchone()
+        if row is None:
+            return PortraitSettings()
+        return PortraitSettings(
+            smart_background_enabled=bool(row["smart_background_enabled"]),
+            updated_at=_parse_dt(row["updated_at"]) or _utcnow(),
+        )
+
+    def set_portrait_settings(
+        self,
+        user_id: str,
+        agent_id: str,
+        settings: PortraitSettings,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO portrait_settings
+                    (user_id, agent_id, smart_background_enabled, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, agent_id) DO UPDATE SET
+                    smart_background_enabled = excluded.smart_background_enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    agent_id,
+                    1 if settings.smart_background_enabled else 0,
+                    settings.updated_at.isoformat(),
                 ),
             )
 
@@ -279,6 +476,8 @@ class PersonaStore:
                 "user_persona",
                 "open_loops",
                 "agent_notes",
+                "portrait_state",
+                "portrait_settings",
             ):
                 connection.execute(
                     f"DELETE FROM {table} WHERE user_id = ? AND agent_id = ?",

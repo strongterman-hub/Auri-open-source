@@ -244,7 +244,7 @@ fun ChatScreen(
         }
     }
 
-    AuriBackground {
+    AuriBackground(portrait = viewModel.portrait) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
