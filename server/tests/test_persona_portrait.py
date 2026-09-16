@@ -12,9 +12,11 @@ from app.persona.card import apply_presentation, builtin_characters, builtin_pre
 from app.persona.models import PersonaOverrides, PortraitState
 from app.persona.portrait import (
     VARIANTS,
+    avatar_url,
     image_url,
     image_url_small,
     pick_variant,
+    resolve_avatar,
     resolve_images,
     resolve_mood,
     resolve_time_slot,
@@ -35,6 +37,7 @@ def _settings(tmp_dir, **overrides) -> Settings:
     values = {
         "data_dir": tmp_dir,
         "portrait_enabled": True,
+        "persona_user_selection_enabled": True,
         "portrait_default_presentation": "female",
     }
     values.update(overrides)
@@ -145,6 +148,18 @@ def test_image_urls_and_missing_file_fallback(tmp_dir) -> None:
     assert effective == "day_gentle"
     assert large == image_url("female", "day_gentle")
     assert small == image_url_small("female", "day_gentle")
+
+
+def test_avatar_resolver_requires_real_file(tmp_dir) -> None:
+    root = tmp_dir / "static"
+    assert resolve_avatar("female", static_root=root) == ""
+
+    (root / "avatar").mkdir(parents=True)
+    (root / "avatar" / "female.jpg").write_bytes(b"x")
+    assert resolve_avatar("female", static_root=root) == avatar_url("female")
+    # Unknown presentations fall back to the female avatar only when present.
+    assert resolve_avatar("other", static_root=root) == avatar_url("female")
+    assert resolve_avatar("male", static_root=root) == ""
 
 
 # --- character cards -------------------------------------------------------

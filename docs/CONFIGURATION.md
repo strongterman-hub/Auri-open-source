@@ -47,13 +47,13 @@ AURI_AUTH_EMAIL_VERIFICATION_REQUIRED=true
 
 ## 人设与关系行为
 
-`AURI_PERSONA_ENABLED=true` 启用可配置人设。预设位于 `server/app/persona/presets/*.json`，默认使用 `AURI_PERSONA_DEFAULT_PRESET=warm_friend`；`AURI_PERSONA_CANARY_USER_IDS` 可先只对指定账号灰度。用户选择接口已预留，但 `AURI_PERSONA_USER_SELECTION_ENABLED` 默认 false。
+`AURI_PERSONA_ENABLED=true` 启用可配置人设。预设位于 `server/app/persona/presets/*.json`，默认使用 `AURI_PERSONA_DEFAULT_PRESET=warm_friend`；`AURI_PERSONA_CANARY_USER_IDS` 可先只对指定账号灰度。用户选择 API 通过 `AURI_PERSONA_USER_SELECTION_ENABLED=true` 打开；客户端聊天设置中提供「性别」「性格」选择，`GET /v1/persona/me` 返回当前选择与可选的 `characters[]`。
 
 主动消息采用高频优先策略：`AURI_PROACTIVE_FREQUENCY_PRESET=high` 默认对应 `AURI_PROACTIVE_DAILY_MESSAGE_LIMIT=24`，再通过 `AURI_PROACTIVE_HEALTH_DAILY_LIMIT`、`AURI_PROACTIVE_WEATHER_DAILY_LIMIT`、`AURI_PROACTIVE_EXPLORE_DAILY_LIMIT`、`AURI_PROACTIVE_CASUAL_CHECKIN_DAILY_LIMIT`、`AURI_PROACTIVE_SELF_SHARE_DAILY_LIMIT`、`AURI_PROACTIVE_MEMORY_RECALL_DAILY_LIMIT` 控制内容配比。`AURI_CHAT_REPLY_STYLE_ANCHOR_ENABLED`、`AURI_CHAT_REPLY_SILENT_ENABLED` 和 `AURI_CHAT_OPEN_LOOP_*` 控制聊天篇幅锚定、低信息消息沉默与未结问题有效期。
 
 ## 形象与动态背景
 
-`AURI_PORTRAIT_ENABLED=true` 打开智能背景；`AURI_PORTRAIT_CANARY_USER_IDS` 可按账号灰度。服务端按用户时区、睡前睡眠分、30 分钟内运动、6 小时内情绪信号和关系阶段，从 12 个变体中选择背景，并通过 `GET /v1/portrait/current`、`GET/PUT /v1/portrait/settings` 提供给客户端。用户可在账号中心关闭，关闭或未灰度时客户端保持默认渐变背景。变体图片位于 `server/app/static/portrait/{female|male}/{variant}.jpg`，公开仓库使用渐变占位图，私有部署可替换为真实成图。
+`AURI_PORTRAIT_ENABLED=true` 打开智能背景；`AURI_PORTRAIT_CANARY_USER_IDS` 可按账号灰度。服务端按用户时区、睡前睡眠分、30 分钟内运动、6 小时内情绪信号和关系阶段，从 12 个变体中选择背景，并通过 `GET /v1/portrait/current`、`GET/PUT /v1/portrait/settings` 提供给客户端。用户可在账号中心关闭，关闭或未灰度时客户端保持默认渐变背景。变体图片位于 `server/app/static/portrait/{female|male}/{variant}.jpg`，角色头像位于 `server/app/static/portrait/avatar/{presentation}.jpg`；公开仓库使用渐变占位图和占位头像，私有部署可替换为真实成图。
 
 ## JPush
 

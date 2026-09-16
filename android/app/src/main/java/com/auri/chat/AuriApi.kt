@@ -160,6 +160,21 @@ class AuriApi(
         return request("PUT", "/portrait/settings", body, token)
     }
 
+    fun getPersonaMe(token: String): JSONObject =
+        request("GET", "/persona/me", null, token)
+
+    fun updatePersonaSelection(
+        presetId: String,
+        presentation: String,
+        token: String,
+    ): JSONObject {
+        val body = JSONObject()
+            .put("preset_id", presetId)
+            .put("presentation", presentation)
+            .toString()
+        return request("PUT", "/persona/me", body, token)
+    }
+
     fun registerDevice(registrationId: String, token: String): JSONObject {
         val body = JSONObject().put("token", registrationId).toString()
         return request("POST", "/devices", body, token)

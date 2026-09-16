@@ -1857,6 +1857,7 @@ def _make_persona_service(tmp_dir: Path, **settings_overrides) -> PersonaService
     settings = Settings(
         data_dir=tmp_dir,
         proactive_enabled=True,
+        persona_user_selection_enabled=True,
         proactive_quiet_hours="",
         **settings_overrides,
     )

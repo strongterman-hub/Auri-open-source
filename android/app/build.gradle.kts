@@ -24,8 +24,8 @@ android {
         applicationId = appId
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.3.31"
+        versionCode = 36
+        versionName = "0.3.33"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
         manifestPlaceholders["JPUSH_PKGNAME"] = appId

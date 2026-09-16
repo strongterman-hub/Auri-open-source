@@ -42,6 +42,7 @@ class PersonaPreset(BaseModel):
     id: str = "warm_friend"
     version: str = "v1"
     name: str = "Auri"
+    label: str = ""
     description: str = ""
     identity: str = ""
     temperament: list[str] = Field(default_factory=list)
@@ -89,6 +90,7 @@ class CharacterCard(BaseModel):
     version: str = "v1"
     display_name: str = "Auri"
     label: str = "女"
+    summary: str = ""
     appearance: str = ""
     speech_quirks: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)

@@ -16,6 +16,7 @@ from app.persona.card import (
 )
 from app.persona.models import (
     FREQUENCY_DAILY_LIMITS,
+    PRESENTATIONS,
     AgentNote,
     CharacterCard,
     BehaviorPolicy,
@@ -88,11 +89,13 @@ class PersonaService:
         self._portrait_service = portrait_service
 
     def resolve_presentation(self, scope: MemoryScope) -> str | None:
+        if not self.settings.persona_user_selection_enabled:
+            return None
         selection = self.store.get_user_persona(scope.user_id, scope.agent_id)
         if selection is None:
             return None
         value = selection.overrides.presentation
-        return value if value in ("female", "male") else None
+        return value if value in PRESENTATIONS else None
 
     def active_character(self, scope: MemoryScope) -> CharacterCard | None:
         """Return the character card only when the portrait rollout reaches this user."""
@@ -118,15 +121,62 @@ class PersonaService:
         return True
 
     def list_presets(self) -> list[dict[str, Any]]:
-        return [
-            preset.model_dump()
-            for preset in sorted(self.presets.values(), key=lambda item: item.id)
-        ]
+        result = []
+        for preset in sorted(self.presets.values(), key=lambda item: item.id):
+            payload = preset.model_dump()
+            if not payload.get("label"):
+                payload["label"] = preset.id
+            result.append(payload)
+        return result
+
+    def list_characters(self) -> list[dict[str, Any]]:
+        result = []
+        for presentation in PRESENTATIONS:
+            card = self.characters.get(presentation)
+            if card is None:
+                continue
+            result.append(
+                {
+                    "presentation": card.presentation,
+                    "label": card.label or card.presentation,
+                    "display_name": card.display_name or "Auri",
+                    "summary": card.summary,
+                }
+            )
+        return result
+
+    def has_user_selection(self, scope: MemoryScope) -> bool:
+        return self.store.get_user_persona(scope.user_id, scope.agent_id) is not None
+
+    def default_presentation(self) -> str:
+        configured = str(self.settings.portrait_default_presentation or "female")
+        return configured if configured in PRESENTATIONS else PRESENTATIONS[0]
+
+    def effective_user_selection(self, scope: MemoryScope) -> UserPersonaSelection:
+        enabled = bool(self.settings.persona_user_selection_enabled)
+        saved = self.store.get_user_persona(scope.user_id, scope.agent_id) if enabled else None
+        default_id = self.settings.persona_default_preset or DEFAULT_PRESET_ID
+        default_preset = self.presets.get(default_id) or builtin_presets()[DEFAULT_PRESET_ID]
+        presentation = saved.overrides.presentation if saved is not None else None
+        if presentation not in PRESENTATIONS:
+            presentation = self.default_presentation()
+        if saved is None:
+            return UserPersonaSelection(
+                preset_id=default_preset.id,
+                overrides=PersonaOverrides(presentation=presentation),
+            )
+        overrides = saved.overrides.model_copy(deep=True)
+        overrides.presentation = presentation
+        return saved.model_copy(update={"overrides": overrides})
 
     def resolve_preset(self, scope: MemoryScope) -> PersonaPreset:
         default_id = self.settings.persona_default_preset or DEFAULT_PRESET_ID
         fallback = self.presets.get(default_id) or builtin_presets()[DEFAULT_PRESET_ID]
-        selection = self.store.get_user_persona(scope.user_id, scope.agent_id)
+        selection = (
+            self.store.get_user_persona(scope.user_id, scope.agent_id)
+            if self.settings.persona_user_selection_enabled
+            else None
+        )
         if selection is None:
             preset = fallback
         else:
@@ -286,6 +336,37 @@ class PersonaService:
             "frequency_preset": frequency,
             "daily_limit": limit,
         }
+
+    def update_user_preferences(
+        self,
+        scope: MemoryScope,
+        *,
+        preset_id: str | None = None,
+        presentation: str | None = None,
+    ) -> UserPersonaSelection:
+        if not self.settings.persona_user_selection_enabled:
+            raise ValueError("user persona selection is disabled")
+        current = self.effective_user_selection(scope)
+        next_preset_id = preset_id or current.preset_id
+        if next_preset_id not in self.presets:
+            raise ValueError(f"unknown persona preset: {next_preset_id}")
+        next_presentation = current.overrides.presentation or self.default_presentation()
+        if presentation is not None:
+            if presentation not in PRESENTATIONS:
+                raise ValueError(f"unknown presentation: {presentation}")
+            next_presentation = presentation
+        existing = self.store.get_user_persona(scope.user_id, scope.agent_id)
+        now = _utcnow()
+        overrides = current.overrides.model_copy(deep=True)
+        overrides.presentation = next_presentation
+        selection = UserPersonaSelection(
+            preset_id=next_preset_id,
+            overrides=overrides,
+            selected_at=existing.selected_at if existing is not None else now,
+            updated_at=now,
+        )
+        self.store.set_user_persona(scope.user_id, scope.agent_id, selection)
+        return selection
 
     def set_user_selection(
         self,

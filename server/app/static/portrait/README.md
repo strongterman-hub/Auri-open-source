@@ -2,8 +2,8 @@
 
 This directory intentionally contains **procedurally generated gradient placeholders**, not the real character artwork.
 
-- 12 variants x 2 presentations x 2 sizes (`*.jpg` and `*@540.jpg`).
-- The real Qwen-generated scenes stay in the private workspace and are deployed only to the private service.
+- 12 variants x 2 presentations x 2 sizes (`*.jpg` and `*@540.jpg`), plus two gradient avatar placeholders under `avatar/`.
+- The real Qwen-generated scenes and avatar crops stay in the private workspace and are deployed only to the private service.
 - Why: the generated portraits are personal likeness assets; the public repository keeps the feature testable without redistributing them.
 
 To build an environment with real artwork, run the private tooling:

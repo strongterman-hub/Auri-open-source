@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -212,6 +213,7 @@ fun ChatScreen(
     }
 
     val messages = viewModel.messages
+    val portraitActive = viewModel.portrait != null
     val shouldSkipBackgroundSettingsAction = backgroundSettingsProfile == null &&
         messages.any { message -> message.actions.any { it.type == "open_autostart" } }
     LaunchedEffect(shouldSkipBackgroundSettingsAction) {
@@ -394,13 +396,17 @@ fun ChatScreen(
                         },
                     ) { item ->
                         when (item) {
-                            is ChatListItem.Timestamp -> TimestampDivider(item.time)
+                            is ChatListItem.Timestamp -> TimestampDivider(
+                                time = item.time,
+                                dimBackdrop = portraitActive,
+                            )
                             is ChatListItem.Message -> MessageBubble(
                                 message = item.message,
                                 proactiveEnabled = viewModel.proactiveEnabled,
                                 notificationsGranted = notificationsGranted,
                                 locationGranted = locationGranted,
                                 backgroundSettingsProfile = backgroundSettingsProfile,
+                                portraitActive = portraitActive,
                                 onRetry = viewModel::retry,
                                 onAction = ::handleChatAction,
                             )
@@ -497,18 +503,40 @@ private fun AppDrawer(
 }
 
 @Composable
-private fun TimestampDivider(time: Long) {
+private fun TimestampDivider(
+    time: Long,
+    dimBackdrop: Boolean,
+) {
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = formatWeChatTimestamp(time),
-            color = AuriTokens.Muted,
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 4.dp),
-        )
+        val label = formatWeChatTimestamp(time)
+        if (dimBackdrop) {
+            // The photo background makes free-floating muted timestamps hard
+            // to read; give them a small translucent plate when it is active.
+            Surface(
+                color = Color.Black.copy(alpha = 0.30f),
+                contentColor = AuriTokens.Muted,
+                shape = RoundedCornerShape(50),
+            ) {
+                Text(
+                    text = label,
+                    color = AuriTokens.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+            }
+        } else {
+            Text(
+                text = label,
+                color = AuriTokens.Muted,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
     }
 }
 
@@ -519,14 +547,20 @@ private fun MessageBubble(
     notificationsGranted: Boolean,
     locationGranted: Boolean,
     backgroundSettingsProfile: BackgroundSettingsProfile?,
+    portraitActive: Boolean,
     onRetry: (String) -> Unit,
     onAction: (ChatAction) -> Unit,
 ) {
     val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bubbleColor = if (message.isUser) {
-        MaterialTheme.colorScheme.primary
+    val bubbleColor = when {
+        message.isUser -> MaterialTheme.colorScheme.primary
+        portraitActive -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val bubbleBorder = if (!message.isUser && portraitActive) {
+        BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
     } else {
-        MaterialTheme.colorScheme.surfaceVariant
+        null
     }
     val bubbleShape = if (message.isUser) {
         RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
@@ -547,7 +581,9 @@ private fun MessageBubble(
             modifier = Modifier
                 .widthIn(max = 340.dp),
             color = bubbleColor,
+            contentColor = contentColor,
             shape = bubbleShape,
+            border = bubbleBorder,
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),

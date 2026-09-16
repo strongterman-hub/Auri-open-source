@@ -24,6 +24,7 @@ PRESENTATIONS: tuple[str, ...] = ("female", "male")
 ACTIVE_ACTIVITY_STATES: tuple[str, ...] = ("步行", "骑行", "跑步", "运动")
 
 DEFAULT_STATIC_ROOT = Path(__file__).resolve().parent.parent / "static" / "portrait"
+AVATAR_DIRNAME = "avatar"
 
 _TIME_DEFAULTS = {
     "dawn": ("dawn_calm", "dawn_slot_default"),
@@ -147,6 +148,32 @@ def image_url(presentation: str, variant: str) -> str:
 
 def image_url_small(presentation: str, variant: str) -> str:
     return f"/static/portrait/{presentation}/{variant}@540.jpg"
+
+
+def avatar_url(presentation: str) -> str:
+    """Return the stable avatar URL for one character presentation."""
+
+    value = presentation if presentation in PRESENTATIONS else PRESENTATIONS[0]
+    return f"/static/portrait/{AVATAR_DIRNAME}/{value}.jpg"
+
+
+def resolve_avatar(
+    presentation: str,
+    *,
+    static_root: Path | str | None = None,
+) -> str:
+    """Return the avatar URL only when the file exists.
+
+    Public placeholder deployments may ship without avatar files; an empty
+    string lets clients fall back to the built-in gradient avatar instead of
+    requesting a URL that always 404s.
+    """
+
+    root = Path(static_root) if static_root is not None else DEFAULT_STATIC_ROOT
+    value = presentation if presentation in PRESENTATIONS else PRESENTATIONS[0]
+    if (root / AVATAR_DIRNAME / f"{value}.jpg").exists():
+        return avatar_url(value)
+    return ""
 
 
 def _existing_variant(

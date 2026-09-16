@@ -374,6 +374,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var portrait by mutableStateOf<PortraitBackground?>(null)
         private set
 
+    var personaOptions by mutableStateOf<PersonaOptions?>(null)
+        private set
+
+    var personaLoading by mutableStateOf(false)
+        private set
+
+    var personaSaving by mutableStateOf(false)
+        private set
+
+    var personaNotice by mutableStateOf<String?>(null)
+        private set
+
+    var personaLoadFailed by mutableStateOf(false)
+        private set
+
     init {
         viewModelScope.launch {
             val cached = withContext(Dispatchers.IO) { messageDao.getAll() }
@@ -756,6 +771,81 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             portraitStore.save(resolved)
             portraitPollMs = (resolved.expiresInSeconds * 1000L)
                 .coerceAtLeast(PORTRAIT_MIN_POLL_MS)
+        }
+    }
+
+    fun loadPersonaOptions() {
+        val token = authStore.getToken() ?: return
+        viewModelScope.launch {
+            personaLoading = true
+            val response = withContext(Dispatchers.IO) {
+                runCatching { api.getPersonaMe(token) }.getOrNull()
+            }
+            personaLoading = false
+            if (response == null) {
+                personaLoadFailed = personaOptions == null
+                return@launch
+            }
+            val parsed = parsePersonaOptions(response)
+            if (parsed == null) {
+                personaLoadFailed = true
+                return@launch
+            }
+            personaOptions = parsed
+            personaLoadFailed = false
+        }
+    }
+
+    fun clearPersonaNotice() {
+        personaNotice = null
+    }
+
+    fun selectPresentation(presentation: String) {
+        val options = personaOptions ?: return
+        updatePersonaSelection(options.selection.presetId, presentation)
+    }
+
+    fun selectPersonality(presetId: String) {
+        val options = personaOptions ?: return
+        updatePersonaSelection(presetId, options.selection.presentation)
+    }
+
+    private fun updatePersonaSelection(presetId: String, presentation: String) {
+        if (personaSaving) return
+        val token = authStore.getToken() ?: return
+        val previous = personaOptions ?: return
+        viewModelScope.launch {
+            personaSaving = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching { api.updatePersonaSelection(presetId, presentation, token) }
+            }
+            personaSaving = false
+            result.onSuccess { response ->
+                val selectionJson = response.optJSONObject("selection")
+                val updatedPreset = selectionJson?.optString("preset_id").orEmpty().ifBlank { presetId }
+                val updatedPresentation = selectionJson?.optString("presentation").orEmpty().ifBlank { presentation }
+                personaOptions = previous.copy(
+                    selection = PersonaSelection(updatedPreset, updatedPresentation)
+                )
+                if (previous.selection.presentation != updatedPresentation) {
+                    val label = previous.characters
+                        .firstOrNull { it.presentation == updatedPresentation }
+                        ?.label
+                        ?: updatedPresentation
+                    portraitStore.clear()
+                    portrait = null
+                    refreshPortrait()
+                    personaNotice = "已切换为$label"
+                } else {
+                    val label = previous.presets
+                        .firstOrNull { it.presetId == updatedPreset }
+                        ?.label
+                        ?: updatedPreset
+                    personaNotice = "已切换为$label"
+                }
+            }.onFailure { exception ->
+                personaNotice = readableNetworkError(exception, "设置失败，请稍后重试")
+            }
         }
     }
 

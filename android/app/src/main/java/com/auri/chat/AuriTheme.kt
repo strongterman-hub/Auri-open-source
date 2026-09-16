@@ -123,7 +123,24 @@ fun AuriBackground(
     portrait: PortraitBackground? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val hasPortrait = portrait != null
     Box(modifier = modifier.fillMaxSize()) {
+        // Always keep the aurora gradient underneath. It is the silent
+        // fallback for disabled smart backgrounds and failed image loads.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            AuriTokens.AuroraTop,
+                            AuriTokens.Background,
+                            AuriTokens.AuroraBottom,
+                        ),
+                    ),
+                ),
+        )
+
         Crossfade(
             targetState = portrait,
             animationSpec = tween(durationMillis = 400),
@@ -138,20 +155,33 @@ fun AuriBackground(
                 )
             }
         }
-        // The aurora scrim always stays on top of the photo so bubbles and
-        // text keep their existing contrast even if an image is loading.
+
+        // With a photo active the scrim becomes a light top/bottom vignette
+        // and leaves the middle clear, so the character stays visible between
+        // and behind message bubbles. Without a photo the original opaque
+        // aurora treatment is preserved.
+        val scrim = if (hasPortrait) {
+            Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0.00f to AuriTokens.AuroraTop.copy(alpha = 0.62f),
+                    0.20f to AuriTokens.Background.copy(alpha = 0.22f),
+                    0.72f to AuriTokens.Background.copy(alpha = 0.16f),
+                    1.00f to AuriTokens.AuroraBottom.copy(alpha = 0.64f),
+                ),
+            )
+        } else {
+            Brush.verticalGradient(
+                listOf(
+                    AuriTokens.AuroraTop.copy(alpha = 0.85f),
+                    AuriTokens.Background.copy(alpha = 0.70f),
+                    AuriTokens.AuroraBottom.copy(alpha = 0.90f),
+                ),
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            AuriTokens.AuroraTop.copy(alpha = 0.85f),
-                            AuriTokens.Background.copy(alpha = 0.70f),
-                            AuriTokens.AuroraBottom.copy(alpha = 0.90f),
-                        ),
-                    ),
-                ),
+                .background(scrim),
         )
         content()
     }

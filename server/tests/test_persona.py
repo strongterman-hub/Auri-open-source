@@ -25,7 +25,7 @@ class _FakeLLM:
 
 
 def _service(tmp_dir, **overrides) -> PersonaService:
-    settings = Settings(data_dir=tmp_dir, **overrides)
+    settings = Settings(data_dir=tmp_dir, persona_user_selection_enabled=True, **overrides)
     store = PersonaStore(tmp_dir / "memory.db")
     return PersonaService(store=store, settings=settings)
 

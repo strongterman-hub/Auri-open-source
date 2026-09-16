@@ -71,7 +71,7 @@ class PortraitStore(context: Context) {
  * for this account (or the payload is unusable), which means the client must
  * silently fall back to the existing gradient background.
  */
-private fun resolveImageUrl(value: String): String {
+internal fun resolveImageUrl(value: String): String {
     if (value.startsWith("http://") || value.startsWith("https://")) return value
     val base = ApiConfig.BASE_URL.trimEnd('/')
     val origin = if (base.endsWith("/v1")) base.dropLast(3) else base

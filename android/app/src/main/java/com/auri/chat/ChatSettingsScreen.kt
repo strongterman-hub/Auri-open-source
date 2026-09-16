@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,8 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -46,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,9 +99,21 @@ fun ChatSettingsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showSoundSheet by remember { mutableStateOf(false) }
+    var showPresentationSheet by remember { mutableStateOf(false) }
+    var showPersonalitySheet by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadPersonaOptions()
+    }
+
+    LaunchedEffect(viewModel.personaNotice) {
+        val message = viewModel.personaNotice ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.clearPersonaNotice()
+    }
 
     BackHandler {
         if (showSearch) {
@@ -162,6 +180,12 @@ fun ChatSettingsScreen(
                 },
                 onClear = { showClearDialog = true },
                 onSound = { showSoundSheet = true },
+                personaOptions = viewModel.personaOptions,
+                personaLoading = viewModel.personaLoading,
+                personaLoadFailed = viewModel.personaLoadFailed,
+                onRetryPersona = { viewModel.loadPersonaOptions() },
+                onPresentation = { showPresentationSheet = true },
+                onPersonality = { showPersonalitySheet = true },
             )
         }
     }
@@ -251,6 +275,51 @@ fun ChatSettingsScreen(
             }
         }
     }
+    if (showPresentationSheet) {
+        val options = viewModel.personaOptions
+        if (options != null) {
+            PersonaChoiceSheet(
+                title = "选择性别",
+                choices = options.characters.map { character ->
+                    PersonaChoiceItem(
+                        key = character.presentation,
+                        title = character.label,
+                        subtitle = character.summary,
+                        selected = character.presentation == options.selection.presentation,
+                    )
+                },
+                onDismiss = { showPresentationSheet = false },
+                onSelect = { value ->
+                    showPresentationSheet = false
+                    viewModel.selectPresentation(value)
+                },
+            )
+        }
+    }
+
+    if (showPersonalitySheet) {
+        val options = viewModel.personaOptions
+        if (options != null) {
+            PersonaChoiceSheet(
+                title = "选择性格",
+                choices = options.presets.map { preset ->
+                    PersonaChoiceItem(
+                        key = preset.presetId,
+                        title = preset.label,
+                        subtitle = listOf(preset.description, preset.frequencyHint)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                        selected = preset.presetId == options.selection.presetId,
+                    )
+                },
+                onDismiss = { showPersonalitySheet = false },
+                onSelect = { value ->
+                    showPersonalitySheet = false
+                    viewModel.selectPersonality(value)
+                },
+            )
+        }
+    }
     }
 }
 
@@ -260,6 +329,12 @@ private fun ChatSettingsContent(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     onSound: () -> Unit,
+    personaOptions: PersonaOptions?,
+    personaLoading: Boolean,
+    personaLoadFailed: Boolean,
+    onRetryPersona: () -> Unit,
+    onPresentation: () -> Unit,
+    onPersonality: () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -268,29 +343,21 @@ private fun ChatSettingsContent(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(modifier = Modifier.height(20.dp))
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary,
-                        ),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "Auri",
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
+        val currentCharacter = personaOptions?.let { options ->
+            options.characters.firstOrNull {
+                it.presentation == options.selection.presentation
+            }
         }
+        AuriSettingsAvatar(avatarUrl = currentCharacter?.avatarUrl.orEmpty())
         Spacer(modifier = Modifier.height(28.dp))
+        PersonaSettingsGroup(
+            options = personaOptions,
+            loading = personaLoading,
+            loadFailed = personaLoadFailed,
+            onRetry = onRetryPersona,
+            onPresentation = onPresentation,
+            onPersonality = onPersonality,
+        )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -527,3 +594,208 @@ private fun playSound(context: Context, choice: SoundChoice) {
 
 private fun formatChatTime(timestamp: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
+
+
+private data class PersonaChoiceItem(
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val selected: Boolean,
+)
+
+@Composable
+private fun AuriSettingsAvatar(avatarUrl: String) {
+    Box(
+        modifier = Modifier.size(96.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // The gradient letter avatar stays underneath, so a missing or failed
+        // character image silently falls back to the old settings identity.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.secondary,
+                        ),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Auri",
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (avatarUrl.isNotBlank()) {
+            SubcomposeAsyncImage(
+                model = avatarUrl,
+                contentDescription = "Auri 头像",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .border(
+                        width = 2.dp,
+                        color = Color.White.copy(alpha = 0.12f),
+                        shape = CircleShape,
+                    ),
+                loading = {},
+                error = {},
+            )
+        }
+    }
+}
+
+@Composable
+private fun PersonaSettingsGroup(
+    options: PersonaOptions?,
+    loading: Boolean,
+    loadFailed: Boolean,
+    onRetry: () -> Unit,
+    onPresentation: () -> Unit,
+    onPersonality: () -> Unit,
+) {
+    if (options == null && !loading && !loadFailed) return
+    if (options == null) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "Auri 人设",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.Face,
+                    title = if (loading) "正在加载…" else "Auri 人设暂不可用",
+                    subtitle = if (loading) "正在读取当前设置" else "点按重试",
+                    onClick = { if (!loading) onRetry() },
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        return
+    }
+    if (!options.available || !options.userSelectionEnabled) return
+    val currentCharacter = options.characters.firstOrNull {
+        it.presentation == options.selection.presentation
+    }
+    val currentPreset = options.presets.firstOrNull {
+        it.presetId == options.selection.presetId
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = "Auri 人设",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            if (options.portraitAvailable) {
+                SettingsRow(
+                    icon = Icons.Outlined.Face,
+                    title = "性别",
+                    subtitle = listOfNotNull(
+                        currentCharacter?.label,
+                        currentCharacter?.summary,
+                    ).joinToString(" · ").ifBlank { options.selection.presentation },
+                    onClick = onPresentation,
+                )
+            }
+            SettingsRow(
+                icon = Icons.Outlined.Person,
+                title = "性格",
+                subtitle = listOfNotNull(
+                    currentPreset?.label,
+                    currentPreset?.description,
+                ).joinToString(" · ").ifBlank { options.selection.presetId },
+                onClick = onPersonality,
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PersonaChoiceSheet(
+    title: String,
+    choices: List<PersonaChoiceItem>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 16.dp,
+                vertical = 8.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            item(key = "persona-header") {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+            items(choices, key = { it.key }) { choice ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onSelect(choice.key) }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = choice.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (choice.subtitle.isNotBlank()) {
+                            Text(
+                                text = choice.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (choice.selected) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

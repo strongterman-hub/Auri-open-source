@@ -13,6 +13,7 @@ from app.persona.portrait import (
     image_url,
     image_url_small,
     pick_variant,
+    resolve_avatar,
     resolve_images,
     resolve_mood,
     resolve_time_slot,
@@ -336,6 +337,11 @@ class PortraitService:
         )
         return large, small
 
+    def avatar_url(self, presentation: str) -> str:
+        """Resolve the character avatar, or an empty string when unavailable."""
+
+        return resolve_avatar(presentation, static_root=self.static_root)
+
     # -- observation hook ------------------------------------------------
 
     def observe_user_text(
@@ -361,6 +367,7 @@ class PortraitService:
 
 __all__ = [
     "PortraitService",
+    "avatar_url",
     "image_url",
     "image_url_small",
     "mood_from_text",

@@ -11,3 +11,5 @@ gradle :app:testStoreDebugUnitTest :app:assembleStoreDebug
 默认 Debug 包连接模拟器宿主机的 `http://10.0.2.2:8010/v1`，使用 `com.auri.community.debug` 包名。自建服务：`-PapiBaseUrl=https://your-domain.example/v1`。
 
 无 JPush AppKey 时不初始化推送；无私有签名配置时 Release 为未签名产物。第三方 SDK 不因客户端采用 MIT 而改变其许可证。
+
+0.3.33 起聊天设置提供「性别」「性格」选择，服务端人物卡通过 `avatar_url` 下发角色头像；头像失败时回退渐变字母头像，智能背景开启时聊天页使用轻遮罩与半透明助手气泡。

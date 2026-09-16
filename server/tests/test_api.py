@@ -548,19 +548,79 @@ def test_persona_presets_and_me_endpoints(client) -> None:
     assert register.status_code == 201
     headers = {"Authorization": f"Bearer {register.json()['token']}"}
 
+    container = client.app.state.container
+    container.settings.portrait_enabled = True
+    container.portrait_service._canary = set()
+
     presets = client.get("/v1/persona/presets", headers=headers)
     assert presets.status_code == 200
-    ids = {item["id"] for item in presets.json()["presets"]}
-    assert {"warm_friend", "playful", "calm", "efficient"} <= ids
+    by_id = {item["id"]: item for item in presets.json()["presets"]}
+    assert {"warm_friend", "playful", "calm", "efficient"} <= set(by_id)
+    assert by_id["warm_friend"]["label"] == "温和陪伴"
 
     me = client.get("/v1/persona/me", headers=headers)
     assert me.status_code == 200
-    assert me.json()["preset"]["id"] == "warm_friend"
-    assert me.json()["user_selection_enabled"] is False
+    payload = me.json()
+    assert payload["preset"]["id"] == "warm_friend"
+    assert payload["user_selection_enabled"] is False
+    assert payload["available"] is True
+    assert payload["portrait_available"] is True
+    assert payload["selection"] == {
+        "preset_id": "warm_friend",
+        "presentation": "female",
+        "source": "default",
+    }
+    assert {item["presentation"] for item in payload["characters"]} == {"female", "male"}
+    assert all("avatar_url" in item for item in payload["characters"])
 
-    update = client.put(
+    disabled = client.put(
+        "/v1/persona/me",
+        json={"preset_id": "calm", "presentation": "male"},
+        headers=headers,
+    )
+    assert disabled.status_code == 403
+
+    extra_field = client.put(
         "/v1/persona/me",
         json={"preset_id": "calm", "overrides": {}},
         headers=headers,
     )
-    assert update.status_code == 403
+    assert extra_field.status_code == 422
+
+    container.settings.persona_user_selection_enabled = True
+
+    update = client.put(
+        "/v1/persona/me",
+        json={"preset_id": "calm", "presentation": "male"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["selection"]["source"] == "user"
+    assert update.json()["selection"]["preset_id"] == "calm"
+    assert update.json()["selection"]["presentation"] == "male"
+
+    only_presentation = client.put(
+        "/v1/persona/me",
+        json={"presentation": "female"},
+        headers=headers,
+    )
+    assert only_presentation.status_code == 200
+    assert only_presentation.json()["selection"]["preset_id"] == "calm"
+    assert only_presentation.json()["selection"]["presentation"] == "female"
+
+    only_preset = client.put(
+        "/v1/persona/me",
+        json={"preset_id": "playful"},
+        headers=headers,
+    )
+    assert only_preset.status_code == 200
+    assert only_preset.json()["selection"]["preset_id"] == "playful"
+    assert only_preset.json()["selection"]["presentation"] == "female"
+
+    me_after = client.get("/v1/persona/me", headers=headers)
+    assert me_after.status_code == 200
+    assert me_after.json()["selection"] == {
+        "preset_id": "playful",
+        "presentation": "female",
+        "source": "user",
+    }

@@ -1,5 +1,12 @@
 # 版本与验证记录
 
+## 2026-09-16：聊天背景清晰度、角色头像联动与设置文案（Android 0.3.33）
+
+- 服务端 `GET /v1/persona/me` 的 `characters[]` 新增 `avatar_url`，可从 `server/app/static/portrait/avatar/{presentation}.jpg` 提供角色头像；公开仓库包含两张渐变占位头像，真实头像只在私有部署。
+- Android 0.3.33 / versionCode 36：动态背景在人物中下部使用更轻的四段 Aurora 遮罩；智能背景开启时助手气泡 78% 不透明度并加细描边，时间戳加深色底板，用户气泡保持不透明；聊天设置头像按当前「性别」选项加载，可见文案改为「性别 / 性格」。
+- 公开服务端完整回归 **388 passed**；唯一失败为既有 `test_understanding.py::test_deepseek_structured_toggle_and_finish_diagnostics` 的本机 httpx 代理端口解析环境问题。源码检查 0 问题；公开 Android `testStoreDebugUnitTest`、`assembleStoreDebug`、`assembleDirectDebug` 通过。
+- 公开仓库不包含官方 APK、签名、真实角色成图、生产配置、账号或部署数据。
+
 ## 2026-09-15：人设形象与动态背景（Android 0.3.31）
 
 - 新增 female / male 形象维度与 `CharacterCard`，与现有四个性格预设正交；聊天与主动提示词会附加少量口癖、兴趣和 emoji 偏移。

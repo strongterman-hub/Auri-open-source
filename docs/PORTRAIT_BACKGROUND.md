@@ -6,7 +6,7 @@
 
 - 同一个 Auri 品牌下提供 `female` / `male` 两套形象卡；形象会附带少量口癖、兴趣和 emoji 偏移，但不改写现有四个性格预设的核心气质。
 - 每个形象有 12 张聊天背景变体，由服务端确定性选择，客户端只负责展示与开关。
-- 用户可在账号中心关闭智能背景；未开放账号、关闭开关或接口失败时，客户端保持原有渐变背景，行为与升级前一致。
+- 用户可在账号中心关闭智能背景；聊天设置中「性别」选项会切换背景图库，同时刷新顶部角色头像。未开放账号、关闭开关或接口失败时，客户端保持原有渐变背景。
 
 ## 12 个变体
 
@@ -39,6 +39,7 @@
 ## 接口
 
 - `GET /v1/portrait/current`：返回 `presentation`、`variant`、图片路径、时段、情绪、关系阶段、原因、过期秒数和是否启用。
+- `GET /v1/persona/me`：在 `characters[]` 中返回 `avatar_url`，供聊天设置头像使用；服务端只在 `static/portrait/avatar/{presentation}.jpg` 存在时返回 URL，否则客户端回退渐变字母头像。
 - `GET /v1/portrait/settings`：返回 `smart_background_enabled` 与该账号是否在灰度范围。
 - `PUT /v1/portrait/settings`：用户开关。
 
@@ -48,7 +49,9 @@
 
 - Android 使用 Coil 2.6.0 加载 `image_url`；服务端返回相对路径时客户端按 API base URL 转成绝对地址。
 - 冷启动先渲染 SharedPreferences 缓存，进入前台后按 `expires_in_seconds` 轮询；变体变化使用 400ms 交叉淡入。
-- 图片上始终保留 Aurora 三段渐变遮罩，避免文字对比度随背景变化。
+- 图片上使用四段轻 Aurora 遮罩：顶部 62%、20% 处 22%、72% 处 16%、底部 64%，中下部人物更清楚，状态栏和输入区仍保留可读性。
+- 智能背景开启时，助手气泡使用 78% 不透明度并加 7% 白色描边，时间戳增加深色底板；用户气泡保持不透明以保护主色白字对比度。
+- 聊天设置页圆形头像来自 `avatar_url`，切换「性别」后立即更新；头像文件缺失或加载失败时回退渐变 +「Auri」字母头像。
 - 账号中心「智能背景」开关关闭时立即回退渐变，并向 `PUT /v1/portrait/settings` 同步。
 
 ## 素材与提示词边界
@@ -58,9 +61,9 @@
 公开仓库只提供：
 
 - 接口、数据模型、测试和本文规格；
-- `server/app/static/portrait/` 下程序生成的渐变占位图（48 个文件，约 0.44 MB）。
+- `server/app/static/portrait/` 下程序生成的渐变占位图（48 个文件，约 0.44 MB），以及 `server/app/static/portrait/avatar/{presentation}.jpg` 两张渐变占位头像。
 
-公开仓库**不包含** Qwen 生成的真实角色成图、API Key、基准图与原始生成缓存。自部署若要启用真实背景，需要自己生成或准备图片，并按相同文件名放入 `server/app/static/portrait/{presentation}/{variant}.jpg` 与 `{variant}@540.jpg`。
+公开仓库**不包含** Qwen 生成的真实角色成图、API Key、基准图与原始生成缓存。自部署若要启用真实背景，需要自己生成或准备图片，并按相同文件名放入 `server/app/static/portrait/{presentation}/{variant}.jpg` 与 `{variant}@540.jpg`，头像放入 `server/app/static/portrait/avatar/{presentation}.jpg`。
 
 ## 配置与灰度
 
