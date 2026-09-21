@@ -53,7 +53,9 @@ AURI_AUTH_EMAIL_VERIFICATION_REQUIRED=true
 
 ## 形象与动态背景
 
-`AURI_PORTRAIT_ENABLED=true` 打开智能背景；`AURI_PORTRAIT_CANARY_USER_IDS` 可按账号灰度。服务端按用户时区、睡前睡眠分、30 分钟内运动、6 小时内情绪信号和关系阶段，从 12 个变体中选择背景，并通过 `GET /v1/portrait/current`、`GET/PUT /v1/portrait/settings` 提供给客户端。用户可在账号中心关闭，关闭或未灰度时客户端保持默认渐变背景。变体图片位于 `server/app/static/portrait/{female|male}/{variant}.jpg`，角色头像位于 `server/app/static/portrait/avatar/{presentation}.jpg`；公开仓库使用渐变占位图和占位头像，私有部署可替换为真实成图。
+`AURI_PORTRAIT_ENABLED=true` 打开智能背景；`AURI_PORTRAIT_CANARY_USER_IDS` 可按账号灰度。服务端按用户时区、睡前睡眠分、30 分钟内运动、6 小时内情绪信号、关系阶段以及最新天气/季节，从 16 个变体中选择背景，并通过 `GET /v1/portrait/current`、`GET/PUT /v1/portrait/settings` 提供给客户端。用户可在账号中心关闭，关闭或未灰度时客户端保持默认渐变背景。变体图片位于 `server/app/static/portrait/{female|male}/{variant}.jpg`，角色头像位于 `server/app/static/portrait/avatar/{presentation}.jpg`；公开仓库使用渐变占位图和占位头像，私有部署可替换为真实成图。
+
+`AURI_PORTRAIT_WEATHER_ENABLED=true` 时背景会使用最新天气观测：降雪切到 `snow_winter`、降雨切到 `rain_umbrella`、高温/夏季切到 `summer_light`、秋季/低温切到 `autumn_wind`。`AURI_PORTRAIT_WEATHER_HEMISPHERE` 默认 `north`，`AURI_PORTRAIT_WEATHER_HOT_THRESHOLD_C` 默认 28，`AURI_PORTRAIT_WEATHER_COLD_THRESHOLD_C` 默认 10。公开默认 `AURI_PORTRAIT_ENABLED=false`，因此上述天气规则只在启用智能背景后生效。
 
 ## JPush
 

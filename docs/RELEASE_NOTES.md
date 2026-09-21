@@ -1,5 +1,13 @@
 # 版本与验证记录
 
+## 2026-09-16：天气与季节背景匹配（服务端）
+
+- 新增 `summer_light`、`autumn_wind`、`rain_umbrella`、`snow_winter` 四个变体；服务端读取最新 `weather` 观测，按下雪 → 降雨 → 高温/夏季 → 秋季/低温的规则切换背景。
+- 天气观测来自现有 Open-Meteo 观察链路，不新增模型调用；没有天气观测时保持原有时间/情绪/关系阶段规则。
+- 配置新增 `AURI_PORTRAIT_WEATHER_ENABLED`、`AURI_PORTRAIT_WEATHER_HEMISPHERE`、`AURI_PORTRAIT_WEATHER_HOT_THRESHOLD_C`、`AURI_PORTRAIT_WEATHER_COLD_THRESHOLD_C`。
+- 公开仓库包含 16 个变体 × 男女 × 两档尺寸的渐变占位图；真实成图仍只在私有部署。Android 客户端无需更新，下一次背景刷新会自动拿到新变体。
+- 服务端完整回归 **388 passed**（另有 1 项既有 httpx 环境失败）；`test_persona_portrait.py` 新增天气码、季节、优先级和服务观测注入测试。
+
 ## 2026-09-16：聊天背景清晰度、角色头像联动与设置文案（Android 0.3.33）
 
 - 服务端 `GET /v1/persona/me` 的 `characters[]` 新增 `avatar_url`，可从 `server/app/static/portrait/avatar/{presentation}.jpg` 提供角色头像；公开仓库包含两张渐变占位头像，真实头像只在私有部署。

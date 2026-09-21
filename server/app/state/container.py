@@ -254,6 +254,22 @@ def create_container(settings: Settings) -> Container:
         default_timezone=settings.default_timezone,
     )
     resolve_user_tz = lambda user_id: timezone_resolver.get(user_id)
+
+    def latest_weather_payload(scope: MemoryScope) -> dict | None:
+        try:
+            observations = observation_service.query(
+                scope.user_id,
+                scope.agent_id,
+                source=ObservationSource.weather,
+                limit=1,
+            )
+        except Exception:
+            return None
+        if not observations:
+            return None
+        payload = observations[0].payload
+        return payload if isinstance(payload, dict) else None
+
     portrait_service = PortraitService(
         store=persona_store,
         settings=settings,
@@ -262,6 +278,7 @@ def create_container(settings: Settings) -> Container:
         timezone_resolver=timezone_resolver,
         relationship_provider=persona_service.relationship_state,
         presentation_provider=persona_service.resolve_presentation,
+        weather_provider=latest_weather_payload,
     )
     persona_service.attach_portrait_service(portrait_service)
     schedule_service = ScheduleService(

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     portrait_refresh_seconds: int = 900
     portrait_sleep_tired_threshold: int = 60
     portrait_active_window_minutes: int = 30
+    # Weather/season-aware backgrounds use the latest weather observation.
+    # The hemisphere keeps calendar seasons correct for self-hosted instances.
+    portrait_weather_enabled: bool = True
+    portrait_weather_hemisphere: str = "north"
+    portrait_weather_hot_threshold_c: int = 28
+    portrait_weather_cold_threshold_c: int = 10
     # Background consolidation (dreaming-lite). Write approval is reserved and
     # not yet enforced by the memory tool.
     memory_consolidation_max_candidates: int = 10

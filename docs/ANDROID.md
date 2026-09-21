@@ -98,3 +98,5 @@ keyPassword=YOUR_KEY_PASSWORD
 0.3.31 起 Android 引入 Coil 2.6.0：聊天页通过 `GET /v1/portrait/current` 获取背景，变体变化时 400ms 交叉淡入；冷启动先读 SharedPreferences 缓存，失败或未灰度时静默回退默认渐变。账号中心在位置权限下方提供「智能背景」开关，对应 `GET/PUT /v1/portrait/settings`。自部署需要把 `server/app/static/portrait/` 放入真实或占位图片。
 
 0.3.33 起智能背景开启时使用更轻的四段 Aurora 遮罩，助手气泡 78% 不透明度并加细描边，时间戳加深色底板，用户气泡保持不透明；聊天设置的「性别 / 性格」选择通过 `GET/PUT /v1/persona/me` 完成，顶部头像按 `characters[].avatar_url` 加载，缺失或失败时回退渐变字母头像。
+
+天气/季节变体完全由服务端解析，Android 无需升级；客户端下一次背景轮询或前台恢复时会自动获取新增的夏装、秋装、雨天撑伞和雪天图片。

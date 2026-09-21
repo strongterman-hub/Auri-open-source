@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 TIME_SLOTS: tuple[str, ...] = ("dawn", "day", "dusk", "night")
 MOODS: tuple[str, ...] = ("neutral", "tired", "low", "active", "cozy", "cheerful")
@@ -18,10 +18,26 @@ VARIANTS: tuple[str, ...] = (
     "tired_rest",
     "sad_low",
     "celebrate_up",
+    "summer_light",
+    "autumn_wind",
+    "rain_umbrella",
+    "snow_winter",
 )
 DEFAULT_VARIANT = "day_gentle"
 PRESENTATIONS: tuple[str, ...] = ("female", "male")
 ACTIVE_ACTIVITY_STATES: tuple[str, ...] = ("步行", "骑行", "跑步", "运动")
+
+
+WEATHER_VARIANTS: tuple[str, ...] = (
+    "summer_light",
+    "autumn_wind",
+    "rain_umbrella",
+    "snow_winter",
+)
+SNOW_WEATHER_CODES: frozenset[int] = frozenset({71, 73, 75, 77, 85, 86})
+RAIN_WEATHER_CODES: frozenset[int] = frozenset(
+    {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
+)
 
 DEFAULT_STATIC_ROOT = Path(__file__).resolve().parent.parent / "static" / "portrait"
 AVATAR_DIRNAME = "avatar"
@@ -83,6 +99,98 @@ def _tail_is(values: Sequence[str], value: str, count: int) -> bool:
     return len(values) >= count and all(item == value for item in values[-count:])
 
 
+def classify_weather(weather_code: int | None) -> str | None:
+    """Map an Open-Meteo WMO weather code to snow / rain / clear."""
+
+    if weather_code is None:
+        return None
+    try:
+        code = int(weather_code)
+    except (TypeError, ValueError):
+        return None
+    if code in SNOW_WEATHER_CODES:
+        return "snow"
+    if code in RAIN_WEATHER_CODES:
+        return "rain"
+    return "clear"
+
+
+def season_for_month(local_month: int, hemisphere: str = "north") -> str:
+    """Return the astronomical season for a local month.
+
+    ``hemisphere`` accepts ``north`` or ``south`` so self-hosted instances in
+    the southern hemisphere can keep the calendar seasons aligned.
+    """
+
+    month = int(local_month) % 12
+    if month == 0:
+        month = 12
+    north = str(hemisphere or "north").strip().lower().startswith("north")
+    if month in (3, 4, 5):
+        return "spring" if north else "autumn"
+    if month in (6, 7, 8):
+        return "summer" if north else "winter"
+    if month in (9, 10, 11):
+        return "autumn" if north else "spring"
+    return "winter" if north else "summer"
+
+
+def _numeric(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def pick_weather_variant(
+    *,
+    weather: Mapping[str, Any] | None,
+    local_month: int | None = None,
+    hemisphere: str = "north",
+    hot_threshold_c: float = 28.0,
+    cold_threshold_c: float = 10.0,
+) -> tuple[str | None, str | None, dict[str, object]]:
+    """Choose a weather/season variant from the latest observation.
+
+    Rain and snow override mood because they are immediately visible cues the
+    user asked to match. Temperature is checked before the calendar season so
+    an unusually hot autumn day or a cold summer rain still gets suitable
+    clothing.
+    """
+
+    weather_code = weather.get("weather_code") if weather else None
+    temperature = _numeric(weather.get("temperature_2m")) if weather else None
+    kind = classify_weather(weather_code)
+    season = (
+        season_for_month(local_month, hemisphere)
+        if local_month is not None
+        else None
+    )
+    signals: dict[str, object] = {
+        "weather_code": weather_code,
+        "temperature_c": temperature,
+        "weather_kind": kind,
+        "season": season,
+    }
+    if not weather:
+        # No observation means the old time/mood behavior stays authoritative.
+        return None, None, signals
+
+    if kind == "snow":
+        return "snow_winter", "weather_snow", signals
+    if kind == "rain":
+        return "rain_umbrella", "weather_rain", signals
+    if temperature is not None and temperature >= float(hot_threshold_c):
+        return "summer_light", "weather_hot", signals
+    if temperature is not None and temperature <= float(cold_threshold_c):
+        return "autumn_wind", "weather_cold", signals
+    if season == "summer":
+        return "summer_light", "season_summer", signals
+    if season == "autumn":
+        return "autumn_wind", "season_autumn", signals
+    return None, None, signals
+
+
 def pick_variant(
     *,
     presentation: str,
@@ -90,8 +198,18 @@ def pick_variant(
     mood: str,
     stage: str,
     recent_variants: Sequence[str] = (),
+    weather: Mapping[str, Any] | None = None,
+    local_month: int | None = None,
+    hemisphere: str = "north",
+    hot_threshold_c: float = 28.0,
+    cold_threshold_c: float = 10.0,
 ) -> tuple[str, str, dict[str, object]]:
-    """Return ``(variant, reason, signals)`` for one resolved background."""
+    """Return ``(variant, reason, signals)`` for one resolved background.
+
+    Weather priority: rain/snow first (immediately visible); low/tired state
+    next; then hot/cold and calendar seasons; then activity/cheerfulness and
+    the existing time-slot defaults.
+    """
 
     recent = [str(item) for item in recent_variants][-8:]
     signals: dict[str, object] = {
@@ -101,11 +219,23 @@ def pick_variant(
         "stage": stage,
         "recent_variants": recent,
     }
+    weather_variant, weather_reason, weather_signals = pick_weather_variant(
+        weather=weather,
+        local_month=local_month,
+        hemisphere=hemisphere,
+        hot_threshold_c=hot_threshold_c,
+        cold_threshold_c=cold_threshold_c,
+    )
+    signals.update(weather_signals)
 
+    if weather_variant in ("snow_winter", "rain_umbrella"):
+        return weather_variant, weather_reason or "weather", signals
     if mood == "low":
         return "sad_low", "recent_low_mood", signals
     if mood == "tired":
         return "tired_rest", "low_sleep_score", signals
+    if weather_variant is not None:
+        return weather_variant, weather_reason or "weather", signals
     if mood == "active":
         return "day_active", "fresh_activity", signals
     if mood == "cheerful":
@@ -140,7 +270,6 @@ def pick_variant(
         time_slot, ("day_gentle", "day_slot_default")
     )
     return variant, reason, signals
-
 
 def image_url(presentation: str, variant: str) -> str:
     return f"/static/portrait/{presentation}/{variant}.jpg"

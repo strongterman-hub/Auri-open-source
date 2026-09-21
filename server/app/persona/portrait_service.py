@@ -121,6 +121,7 @@ class PortraitService:
         timezone_resolver: Any = None,
         relationship_provider: Callable[[MemoryScope], Any] | None = None,
         presentation_provider: Callable[[MemoryScope], str | None] | None = None,
+        weather_provider: Callable[[MemoryScope], dict[str, Any] | None] | None = None,
         static_root: Path | str | None = None,
     ) -> None:
         self.store = store
@@ -130,6 +131,7 @@ class PortraitService:
         self.timezone_resolver = timezone_resolver
         self.relationship_provider = relationship_provider
         self.presentation_provider = presentation_provider
+        self.weather_provider = weather_provider
         self.static_root = static_root
         self._canary = _parse_csv(settings.portrait_canary_user_ids)
         default_presentation = str(settings.portrait_default_presentation or "female")
@@ -201,6 +203,17 @@ class PortraitService:
             return str(self.relationship_provider(scope).stage or "warming")
         except Exception:
             return "warming"
+
+    def _latest_weather(self, scope: MemoryScope) -> dict[str, Any] | None:
+        if not self.settings.portrait_weather_enabled:
+            return None
+        if self.weather_provider is None:
+            return None
+        try:
+            payload = self.weather_provider(scope)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _valid_mood_hint(
         self,
@@ -289,12 +302,18 @@ class PortraitService:
             raw_recent = previous.signals.get("recent_variants")
             if isinstance(raw_recent, list):
                 recent = [str(item) for item in raw_recent]
+        weather = self._latest_weather(scope)
         variant, reason, signals = pick_variant(
             presentation=presentation,
             time_slot=time_slot,
             mood=mood,
             stage=stage,
             recent_variants=recent,
+            weather=weather,
+            local_month=local_now.month,
+            hemisphere=self.settings.portrait_weather_hemisphere,
+            hot_threshold_c=self.settings.portrait_weather_hot_threshold_c,
+            cold_threshold_c=self.settings.portrait_weather_cold_threshold_c,
         )
         effective_mood = "cozy" if variant == "night_cozy" else mood
         history = (recent + [variant])[-6:]

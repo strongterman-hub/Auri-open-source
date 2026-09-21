@@ -13,13 +13,16 @@ from app.persona.models import PersonaOverrides, PortraitState
 from app.persona.portrait import (
     VARIANTS,
     avatar_url,
+    classify_weather,
     image_url,
     image_url_small,
     pick_variant,
+    pick_weather_variant,
     resolve_avatar,
     resolve_images,
     resolve_mood,
     resolve_time_slot,
+    season_for_month,
 )
 from app.persona.portrait_service import PortraitService, mood_from_text
 from app.persona.service import PersonaService
@@ -117,6 +120,83 @@ def test_pick_variant_state_priority_and_time_defaults() -> None:
     assert pick_variant(presentation="female", time_slot="dawn", mood="neutral", stage="close")[0] == "dawn_calm"
     assert pick_variant(presentation="male", time_slot="day", mood="neutral", stage="close")[0] == "day_gentle"
     assert pick_variant(presentation="male", time_slot="dusk", mood="neutral", stage="close")[0] == "dusk_warm"
+
+
+def test_weather_codes_and_seasons() -> None:
+    assert classify_weather(0) == "clear"
+    assert classify_weather(61) == "rain"
+    assert classify_weather(95) == "rain"
+    assert classify_weather(71) == "snow"
+    assert classify_weather(86) == "snow"
+    assert classify_weather(None) is None
+
+    assert season_for_month(1, "north") == "winter"
+    assert season_for_month(7, "north") == "summer"
+    assert season_for_month(10, "north") == "autumn"
+    assert season_for_month(7, "south") == "winter"
+    assert season_for_month(1, "south") == "summer"
+
+
+def test_pick_variant_weather_priority_and_thresholds() -> None:
+    rain = {"weather_code": 61, "temperature_2m": 19}
+    snow = {"weather_code": 71, "temperature_2m": -2}
+    hot = {"weather_code": 0, "temperature_2m": 31}
+    cold = {"weather_code": 3, "temperature_2m": 4}
+    clear_autumn = {"weather_code": 0, "temperature_2m": 18}
+
+    # Rain and snow are immediately visible and override mood/time.
+    assert pick_variant(
+        presentation="female",
+        time_slot="day",
+        mood="cheerful",
+        stage="close",
+        weather=rain,
+        local_month=7,
+    )[0] == "rain_umbrella"
+    assert pick_variant(
+        presentation="male",
+        time_slot="night",
+        mood="active",
+        stage="close",
+        weather=snow,
+        local_month=1,
+    )[0] == "snow_winter"
+
+    # Temperature is checked before the calendar season.
+    assert pick_variant(
+        presentation="female",
+        time_slot="day",
+        mood="neutral",
+        stage="close",
+        weather=hot,
+        local_month=10,
+    )[0] == "summer_light"
+    assert pick_variant(
+        presentation="female",
+        time_slot="day",
+        mood="neutral",
+        stage="close",
+        weather=cold,
+        local_month=7,
+    )[0] == "autumn_wind"
+
+    # Clear autumn weather selects the layered-coat variant.
+    assert pick_variant(
+        presentation="male",
+        time_slot="day",
+        mood="neutral",
+        stage="close",
+        weather=clear_autumn,
+        local_month=10,
+    )[0] == "autumn_wind"
+
+    # No weather payload keeps the previous state/time behavior.
+    assert pick_variant(
+        presentation="male",
+        time_slot="night",
+        mood="active",
+        stage="close",
+    )[0] == "day_active"
 
 
 def test_night_cozy_rotates_after_two_consecutive_uses() -> None:
@@ -249,6 +329,19 @@ def test_service_uses_sleep_and_activity_signals(tmp_dir) -> None:
     state = active.current(scope, now=NIGHT_UTC)
     assert state.mood == "active"
     assert state.variant == "day_active"
+
+
+def test_service_uses_latest_weather_observation(tmp_dir) -> None:
+    service = _service(
+        tmp_dir,
+        weather_provider=lambda scope: {"weather_code": 71, "temperature_2m": -3},
+    )
+    scope = MemoryScope(user_id="weather-user")
+    state = service.current(scope, now=NIGHT_UTC)
+    assert state.variant == "snow_winter"
+    assert state.reason == "weather_snow"
+    assert state.signals["weather_kind"] == "snow"
+    assert state.signals["temperature_c"] == -3.0
 
 
 def test_mood_hint_from_text_has_ttl(tmp_dir) -> None:

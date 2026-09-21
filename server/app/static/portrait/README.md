@@ -2,7 +2,7 @@
 
 This directory intentionally contains **procedurally generated gradient placeholders**, not the real character artwork.
 
-- 12 variants x 2 presentations x 2 sizes (`*.jpg` and `*@540.jpg`), plus two gradient avatar placeholders under `avatar/`.
+- 16 variants x 2 presentations x 2 sizes (`*.jpg` and `*@540.jpg`), plus two gradient avatar placeholders under `avatar/`. The four weather/season variants are `summer_light`, `autumn_wind`, `rain_umbrella`, and `snow_winter`.
 - The real Qwen-generated scenes and avatar crops stay in the private workspace and are deployed only to the private service.
 - Why: the generated portraits are personal likeness assets; the public repository keeps the feature testable without redistributing them.
 

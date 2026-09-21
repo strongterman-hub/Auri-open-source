@@ -7,8 +7,9 @@
 - 同一个 Auri 品牌下提供 `female` / `male` 两套形象卡；形象会附带少量口癖、兴趣和 emoji 偏移，但不改写现有四个性格预设的核心气质。
 - 每个形象有 12 张聊天背景变体，由服务端确定性选择，客户端只负责展示与开关。
 - 用户可在账号中心关闭智能背景；聊天设置中「性别」选项会切换背景图库，同时刷新顶部角色头像。未开放账号、关闭开关或接口失败时，客户端保持原有渐变背景。
+- 服务端会读取该用户最新的天气观测，匹配夏装、秋装叠穿、雨天撑伞和雪天场景；没有天气观测时退回原有的时间/情绪规则。
 
-## 12 个变体
+## 16 个变体
 
 | variant | 时段 | 氛围 |
 |---|---|---|
@@ -24,6 +25,18 @@
 | `tired_rest` | 任意 | 疲惫、柔暗休息 |
 | `sad_low` | 任意 | 低落、冷色雨窗 |
 | `celebrate_up` | 任意 | 开心鼓励、明亮通透 |
+
+## 天气与季节匹配
+
+服务端优先使用最新 `weather` 观测（Open-Meteo 的 `weather_code` 与 `temperature_2m`），按以下顺序匹配：
+
+1. `snow_winter`：降雪类天气码；
+2. `rain_umbrella`：降雨/毛毛雨/雷雨类天气码；
+3. `summer_light`：温度 ≥ 28℃ 或当地季节为夏；
+4. `autumn_wind`：温度 ≤ 10℃ 或当地季节为秋；
+5. 其他情况保持原有时段/情绪/关系阶段规则。
+
+天气变体会覆盖普通时段背景，但会先让位于极端低落的 `sad_low` 和疲惫的 `tired_rest`。南半球自部署通过 `AURI_PORTRAIT_WEATHER_HEMISPHERE=south` 调整季节。没有天气观测、天气功能关闭或观测失败时，行为与旧版完全一致。
 
 ## 选择优先级
 
@@ -61,7 +74,7 @@
 公开仓库只提供：
 
 - 接口、数据模型、测试和本文规格；
-- `server/app/static/portrait/` 下程序生成的渐变占位图（48 个文件，约 0.44 MB），以及 `server/app/static/portrait/avatar/{presentation}.jpg` 两张渐变占位头像。
+- `server/app/static/portrait/` 下程序生成的渐变占位图（64 个文件，约 0.6 MB），以及 `server/app/static/portrait/avatar/{presentation}.jpg` 两张渐变占位头像。
 
 公开仓库**不包含** Qwen 生成的真实角色成图、API Key、基准图与原始生成缓存。自部署若要启用真实背景，需要自己生成或准备图片，并按相同文件名放入 `server/app/static/portrait/{presentation}/{variant}.jpg` 与 `{variant}@540.jpg`，头像放入 `server/app/static/portrait/avatar/{presentation}.jpg`。
 
@@ -70,6 +83,7 @@
 - `AURI_PORTRAIT_ENABLED=false` 为公开默认值；启用后建议使用 `AURI_PORTRAIT_CANARY_USER_IDS` 先灰度。
 - `AURI_PORTRAIT_DEFAULT_PRESENTATION` 默认 `female`。
 - `AURI_PORTRAIT_MOOD_TTL_HOURS=6`、`AURI_PORTRAIT_REFRESH_SECONDS=900`、`AURI_PORTRAIT_SLEEP_TIRED_THRESHOLD=60`、`AURI_PORTRAIT_ACTIVE_WINDOW_MINUTES=30` 可调。
+- `AURI_PORTRAIT_WEATHER_ENABLED=true`、`AURI_PORTRAIT_WEATHER_HEMISPHERE=north`、`AURI_PORTRAIT_WEATHER_HOT_THRESHOLD_C=28`、`AURI_PORTRAIT_WEATHER_COLD_THRESHOLD_C=10` 控制天气/季节匹配。
 
 ## 隐私说明
 
