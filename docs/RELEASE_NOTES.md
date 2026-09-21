@@ -6,7 +6,7 @@
 - 天气观测来自现有 Open-Meteo 观察链路，不新增模型调用；没有天气观测时保持原有时间/情绪/关系阶段规则。
 - 配置新增 `AURI_PORTRAIT_WEATHER_ENABLED`、`AURI_PORTRAIT_WEATHER_HEMISPHERE`、`AURI_PORTRAIT_WEATHER_HOT_THRESHOLD_C`、`AURI_PORTRAIT_WEATHER_COLD_THRESHOLD_C`。
 - 公开仓库包含 16 个变体 × 男女 × 两档尺寸的渐变占位图；真实成图仍只在私有部署。Android 客户端无需更新，下一次背景刷新会自动拿到新变体。
-- 服务端完整回归 **388 passed**（另有 1 项既有 httpx 环境失败）；`test_persona_portrait.py` 新增天气码、季节、优先级和服务观测注入测试。
+- 本机服务端回归 **391 passed / 1 failed**，唯一失败为既有 httpx 本机环境问题；提交后 GitHub Actions run `35577953546` 的 server/android 均 success。`test_persona_portrait.py` 新增天气码、季节、优先级和服务观测注入测试；报告聚合测试改用 3650 天窗口，避免固定日期过期后 CI 失败。
 
 ## 2026-09-16：聊天背景清晰度、角色头像联动与设置文案（Android 0.3.33）
 
