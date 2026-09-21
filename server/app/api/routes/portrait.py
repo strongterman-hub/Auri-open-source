@@ -23,6 +23,7 @@ async def get_current_portrait(
     enabled = service.is_enabled(scope)
     state = service.current(scope) if enabled else service.fallback_state(scope)
     effective_variant, image_url, image_url_small = service.image_urls(state)
+    signals = state.signals if isinstance(state.signals, dict) else {}
     refresh_seconds = max(60, int(container.settings.portrait_refresh_seconds or 900))
     return PortraitCurrentResponse(
         presentation=state.presentation,
@@ -36,6 +37,10 @@ async def get_current_portrait(
         resolved_at=state.resolved_at,
         expires_in_seconds=refresh_seconds,
         enabled=enabled,
+        weather_code=signals.get("weather_code"),
+        temperature_c=signals.get("temperature_c"),
+        weather_kind=signals.get("weather_kind"),
+        season=signals.get("season"),
     )
 
 

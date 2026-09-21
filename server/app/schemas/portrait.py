@@ -17,6 +17,10 @@ class PortraitCurrentResponse(BaseModel):
     resolved_at: datetime
     expires_in_seconds: int
     enabled: bool
+    weather_code: int | None = None
+    temperature_c: float | None = None
+    weather_kind: str | None = None
+    season: str | None = None
 
 
 class PortraitSettingsResponse(BaseModel):

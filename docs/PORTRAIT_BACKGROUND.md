@@ -52,6 +52,7 @@
 ## 接口
 
 - `GET /v1/portrait/current`：返回 `presentation`、`variant`、图片路径、时段、情绪、关系阶段、原因、过期秒数和是否启用。
+- 返回字段还包括 `weather_code`、`temperature_c`、`weather_kind`、`season`，便于确认当前是天气、温度还是历法季节命中。
 - `GET /v1/persona/me`：在 `characters[]` 中返回 `avatar_url`，供聊天设置头像使用；服务端只在 `static/portrait/avatar/{presentation}.jpg` 存在时返回 URL，否则客户端回退渐变字母头像。
 - `GET /v1/portrait/settings`：返回 `smart_background_enabled` 与该账号是否在灰度范围。
 - `PUT /v1/portrait/settings`：用户开关。
