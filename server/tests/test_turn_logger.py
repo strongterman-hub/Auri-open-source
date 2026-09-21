@@ -110,7 +110,7 @@ def test_build_turns_report_aggregates(tmp_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    report = build_turns_report(path, days=30, limit=10)
+    report = build_turns_report(path, days=3650, limit=10)
 
     assert report["totals"]["turns"] == 1
     assert report["totals"]["tool_calls"] == 2

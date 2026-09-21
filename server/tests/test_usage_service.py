@@ -41,7 +41,7 @@ def test_build_usage_report_aggregates_and_costs(tmp_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    report = build_usage_report(path, days=30, limit=10)
+    report = build_usage_report(path, days=3650, limit=10)
 
     assert report["totals"]["requests"] == 2
     assert report["totals"]["prompt_tokens"] == 2_000_000
@@ -88,7 +88,7 @@ def test_build_usage_report_filters_by_user(tmp_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    report = build_usage_report(path, days=30, limit=10, user_id="alice")
+    report = build_usage_report(path, days=3650, limit=10, user_id="alice")
 
     assert report["totals"]["requests"] == 1
     assert len(report["recent"]) == 1
