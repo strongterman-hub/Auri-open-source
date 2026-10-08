@@ -122,7 +122,13 @@ def test_build_turns_report_aggregates(tmp_dir: Path) -> None:
     assert report["recent"][0]["user_id"] == "alice"
 
 
-def test_build_turns_report_filters_and_paginates(tmp_dir: Path) -> None:
+def test_build_turns_report_filters_and_paginates(tmp_dir: Path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 7, 12, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr("app.services.usage_service.datetime", Clock)
     path = tmp_dir / "agent_turns.jsonl"
     records = []
     for index, (status, tool, duration_ms) in enumerate(

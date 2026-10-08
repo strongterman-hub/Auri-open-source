@@ -41,6 +41,9 @@ from app.core.token_logger import TokenLogger
 from app.core.turn_logger import TurnLogger
 from app.files.store import FileStore
 from app.health.store import HealthStore
+from app.reports.store import ReportStore
+from app.reports.service import WeeklyReportService
+from app.reports.tool import HealthReportTool
 from app.health.sleep_score_service import SleepScoreService
 from app.health.sleep_score_store import SleepScoreStore
 from app.integrations.xiaomi.credential_store import CredentialStore, resolve_secret_key
@@ -116,6 +119,7 @@ class Container:
     sleep_score_store: SleepScoreStore
     sleep_score_service: SleepScoreService
     health_service: HealthService
+    weekly_report_service: WeeklyReportService
     observation_store: ObservationStore
     observation_service: ObservationService
     event_store: EventMemoryStore
@@ -205,6 +209,7 @@ def create_container(settings: Settings) -> Container:
         email_verification_required=settings.auth_email_verification_required,
     )
     health_store = HealthStore(settings.data_dir / "health")
+    report_store = ReportStore(settings.data_dir / "reports" / "weekly.db")
     sleep_score_store = SleepScoreStore(health_store.db_path)
     sleep_score_service = SleepScoreService(health_store, sleep_score_store)
     health_service = HealthService(
@@ -475,6 +480,7 @@ def create_container(settings: Settings) -> Container:
         settings.data_dir / "logs" / "proactive_gate.jsonl"
     )
     account_deletion_service = AccountDeletionService(
+        report_store=report_store,
         event_memory_service=event_memory_service,
         schedule_service=schedule_service,
         auth_store=auth_store,
@@ -522,6 +528,7 @@ def create_container(settings: Settings) -> Container:
 
     def tool_factory(scope: MemoryScope) -> list[Tool]:
         return [
+            *([HealthReportTool(report_store, scope.user_id)] if settings.weekly_reports_enabled else []),
             ScheduleTool(schedule_service, scope.user_id, scope.agent_id),
             CreditsBalanceTool(billing_service=billing_service, user_id=scope.user_id),
             MemoryTool(
@@ -724,6 +731,13 @@ def create_container(settings: Settings) -> Container:
         session_service=session_service,
     )
     agent_service.proactive_reply_hook = proactive_engine.record_reply
+    weekly_report_service = WeeklyReportService(
+        store=report_store, health=health_service, llm=llm,
+        timezone_resolver=timezone_resolver, sessions=session_service,
+        engine=proactive_engine, xiaomi=xiaomi_service,
+        credential_store=xiaomi_credential_store, settings=settings,
+        auth_store=auth_store, pending_chat=chat_reply_store.has_open,
+    )
     agent_service.proactive_activity_hook = proactive_engine.record_user_activity
     agent_service.is_onboarding = proactive_engine.is_dense_onboarding
     agent_service.next_onboarding_guide = proactive_engine.next_onboarding_guide
@@ -749,6 +763,7 @@ def create_container(settings: Settings) -> Container:
         sleep_score_store=sleep_score_store,
         sleep_score_service=sleep_score_service,
         health_service=health_service,
+        weekly_report_service=weekly_report_service,
         observation_store=observation_store,
         observation_service=observation_service,
         event_store=event_store,

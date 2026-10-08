@@ -65,6 +65,7 @@ data class ChatFile(
 data class ChatAction(
     val type: String,
     val label: String,
+    val reportId: String? = null,
 )
 
 private fun encodeImages(images: List<String>): String {
@@ -128,7 +129,8 @@ private fun encodeActions(actions: List<ChatAction>): String {
         array.put(
             JSONObject()
                 .put("type", action.type)
-                .put("label", action.label),
+                .put("label", action.label)
+                .put("report_id", action.reportId),
         )
     }
     return array.toString()
@@ -145,6 +147,7 @@ private fun decodeActions(json: String): List<ChatAction> {
                     ChatAction(
                         type = item.optString("type"),
                         label = item.optString("label"),
+                        reportId = item.optString("report_id").takeIf { it.matches(Regex("[a-f0-9]{32}")) },
                     ),
                 )
             }
@@ -601,6 +604,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 ChatAction(
                                     type = action.optString("type"),
                                     label = action.optString("label"),
+                                    reportId = action.optString("report_id").takeIf { it.matches(Regex("[a-f0-9]{32}")) },
                                 ),
                             )
                         }

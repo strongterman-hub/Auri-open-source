@@ -82,6 +82,7 @@ import kotlin.math.roundToInt
 @Composable
 fun HealthScreen(
     onBack: () -> Unit,
+    onOpenReports: () -> Unit = {},
     viewModel: HealthViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -161,6 +162,7 @@ fun HealthScreen(
                     },
                     actions = {
                         if (!showManagement && !showWorkouts && !showAbnormal && detailType == null) {
+                            TextButton(onClick = onOpenReports) { Text("周报") }
                             TextButton(onClick = { showManagement = true }) {
                                 Icon(
                                     imageVector = Icons.Outlined.Settings,

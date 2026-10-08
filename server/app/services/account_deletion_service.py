@@ -63,6 +63,7 @@ class AccountDeletionService:
         persona_store=None,
         schedule_service=None,
         event_memory_service=None,
+        report_store=None,
     ) -> None:
         self.auth_store = auth_store
         self.billing_store = billing_store
@@ -92,6 +93,7 @@ class AccountDeletionService:
         self.persona_store = persona_store
         self.schedule_service = schedule_service
         self.event_memory_service = event_memory_service
+        self.report_store = report_store
 
     async def delete_user(
         self,
@@ -114,6 +116,8 @@ class AccountDeletionService:
         )
 
         self.health_store.clear(user_id)
+        if self.report_store is not None:
+            self.report_store.delete_user(user_id)
         self.sleep_score_store.clear(user_id)
         self.observation_store.delete_user(user_id, agent_id)
         if self.event_store is not None:

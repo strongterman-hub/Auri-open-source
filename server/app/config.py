@@ -302,6 +302,9 @@ class Settings(BaseSettings):
     health_sync_enabled: bool = False
     health_sync_tick_seconds: int = 1800
 
+    # AI weekly reports; clients must register support before automatic delivery.
+    weekly_reports_enabled: bool = False
+
     # Versioned dual sleep scoring. Computation is enabled by default; user
     # visibility stays off until the planned shadow evaluation is complete.
     sleep_dual_score_enabled: bool = True

@@ -97,7 +97,13 @@ def test_build_usage_report_filters_by_user(tmp_dir: Path) -> None:
     assert {u["user_id"] for u in report["by_user"]} == {"alice", "bob"}
 
 
-def test_build_usage_report_filters_paginates_and_groups_in_beijing(tmp_dir: Path) -> None:
+def test_build_usage_report_filters_paginates_and_groups_in_beijing(tmp_dir: Path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 7, 12, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr("app.services.usage_service.datetime", Clock)
     path = tmp_dir / "token_usage.jsonl"
     path.write_text(
         "\n".join(

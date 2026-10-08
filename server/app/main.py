@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI):
     app.state.container = create_container(settings)
     if settings.event_memory_enabled and settings.event_extraction_enabled:
         await app.state.container.event_memory_service.start()
+    if settings.weekly_reports_enabled:
+        await app.state.container.weekly_report_service.start()
     scheduler: ProactiveScheduler | None = None
     health_sync_scheduler: HealthSyncScheduler | None = None
     weather_scheduler: WeatherScheduler | None = None
@@ -96,6 +98,8 @@ async def lifespan(app: FastAPI):
         await app.state.container.schedule_scheduler.start()
         app.state.reminder_scheduler = reminder_scheduler
     yield
+    if settings.weekly_reports_enabled:
+        await app.state.container.weekly_report_service.stop()
     await app.state.container.event_memory_service.stop()
     if chat_reply_scheduler is not None:
         await chat_reply_scheduler.stop()
