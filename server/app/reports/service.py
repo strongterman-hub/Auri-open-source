@@ -42,6 +42,23 @@ class WeeklyReportService:
         self._wake.set()
         return row
 
+    def request_for_chat(self, user_id, week_start=None):
+        """Resolve the requested week, never substituting another saved week."""
+        from datetime import date
+        if not self.store.preferences(user_id)['supported']:
+            raise ValueError('请先更新 Auri 客户端，再在聊天中查看周报。')
+        zone = self.timezone_resolver.get(user_id)
+        latest, _ = last_week(datetime.now(timezone.utc), zone)
+        start = date.fromisoformat(week_start) if week_start else latest
+        if start.weekday() != 0 or start > latest or start < latest - timedelta(days=364):
+            raise ValueError('请指定最近一年内已结束自然周的周一日期。')
+        end = start + timedelta(days=6)
+        row = self.store.queue(user_id, start.isoformat(), end.isoformat(), zone)
+        if row['status'] == 'failed' and not row['html']:
+            row = self.store.queue(user_id, start.isoformat(), end.isoformat(), zone, refresh=True)
+        self._wake.set()
+        return row
+
     async def owner_notes(self, user_id, row):
         notes = []
         for session in await self.sessions.list_by_user(user_id):

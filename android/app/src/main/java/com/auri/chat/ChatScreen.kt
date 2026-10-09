@@ -615,8 +615,16 @@ private fun MessageBubble(
                         color = contentColor,
                     )
                 }
+                if (!message.isUser) {
+                    message.actions.filter { it.type == "open_health_report" }
+                        .mapNotNull { it.reportId }.distinct().forEach { reportId ->
+                            Spacer(modifier = Modifier.height(10.dp))
+                            ChatWeeklyReport(reportId)
+                        }
+                }
                 val visibleActions = message.actions.filter {
-                    it.type != "open_autostart" || backgroundSettingsProfile != null
+                    it.type != "open_health_report" &&
+                        (it.type != "open_autostart" || backgroundSettingsProfile != null)
                 }
                 if (visibleActions.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))

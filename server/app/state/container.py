@@ -43,7 +43,7 @@ from app.files.store import FileStore
 from app.health.store import HealthStore
 from app.reports.store import ReportStore
 from app.reports.service import WeeklyReportService
-from app.reports.tool import HealthReportTool
+from app.reports.tool import HealthReportTool, SendHealthReportTool
 from app.health.sleep_score_service import SleepScoreService
 from app.health.sleep_score_store import SleepScoreStore
 from app.integrations.xiaomi.credential_store import CredentialStore, resolve_secret_key
@@ -528,7 +528,11 @@ def create_container(settings: Settings) -> Container:
 
     def tool_factory(scope: MemoryScope) -> list[Tool]:
         return [
-            *([HealthReportTool(report_store, scope.user_id)] if settings.weekly_reports_enabled else []),
+            *([
+                HealthReportTool(report_store, scope.user_id),
+                SendHealthReportTool(report_store, scope.user_id,
+                    lambda start=None: weekly_report_service.request_for_chat(scope.user_id, start)),
+            ] if settings.weekly_reports_enabled else []),
             ScheduleTool(schedule_service, scope.user_id, scope.agent_id),
             CreditsBalanceTool(billing_service=billing_service, user_id=scope.user_id),
             MemoryTool(

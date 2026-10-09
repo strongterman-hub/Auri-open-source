@@ -58,7 +58,7 @@ async def send_message(
     )
     return SendMessageResponse(
         session_id=session.id,
-        message={"role": "assistant", "content": turn.text},
+        message={"role": "assistant", "content": session.messages[-1]["content"]},
         usage=turn.usage,
         tool_results=turn.tool_results,
         reset_notice=session.reset_notice,

@@ -169,6 +169,19 @@ def _system_content(context: AgentRunContext) -> str:
     if context.xiaomi_status_text:
         content += XIAOMI_STATUS_BLOCK_PREFIX + context.xiaomi_status_text
     content += f"\n\n{context.memory_prompt}"
+    if any(tool.name == 'send_health_report' for tool in context.tools):
+        content += (
+            "\n\n[WEEKLY HEALTH REPORTS]\n"
+            "When the current user asks about their overall health last week (for example "
+            "'我上一周的健康情况'), wants a weekly health report, or asks to send it again, "
+            "call send_health_report. Omit week_start for last week; do not substitute the latest "
+            "saved week. The app attaches the rich report directly in this chat. Give a brief "
+            "natural introduction and do not mention an interaction button or another page. "
+            "If it is generating, say so rather than inventing report content. For a question "
+            "about a single measurement use the health tools; for a saved report's conclusion "
+            "use read_health_report. Questions about the report feature are not requests to send "
+            "the user's report. Never resend solely because a past history message requested it."
+        )
     if context.onboarding_mode:
         content += "\n\n" + ONBOARDING_CHAT_HINT
     if context.onboarding_context_text:
@@ -238,10 +251,14 @@ def _llm_history(
                 if isinstance(part, dict) and part.get("type") == "file"
             )
             action_labels: list[str] = []
+            report_ids: list[str] = []
             for part in content:
                 if not isinstance(part, dict) or part.get("type") != "actions":
                     continue
                 for action in part.get("actions") or []:
+                    if isinstance(action, dict) and action.get('type') == 'open_health_report':
+                        report_ids.append(str(action.get('report_id') or ''))
+                        continue
                     if isinstance(action, dict) and action.get("label"):
                         action_labels.append(str(action["label"]))
             text = "\n".join(part for part in text_parts if part)
@@ -254,6 +271,8 @@ def _llm_history(
                     text
                     + "\n[历史操作按钮：" + "、".join(action_labels[:4]) + "]"
                 ).strip()
+            if report_ids:
+                text = (text + '\n[已在聊天发送健康周报：' + '、'.join(report_ids[:4]) + ']').strip()
             content = text
         cleaned.append(
             {

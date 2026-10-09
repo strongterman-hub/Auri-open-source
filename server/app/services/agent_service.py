@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -16,6 +18,7 @@ from app.files.parser import extract_text
 from app.files.store import FileStore, StoredFile
 from app.memory.models import MemoryScope
 from app.persona.service import PersonaService
+from app.reports.tool import SendHealthReportTool
 from app.services.memory_service import MemoryService
 from app.services.event_memory_service import EventMemoryService
 from app.services.presence_service import LocationRequester
@@ -432,9 +435,10 @@ class AgentService:
             policy_flags=persona_metadata.get("policy_flags"),
         )
         turn = await self.runner.run(context)
-        if not (turn.text or "").strip():
+        assistant_content = self._assistant_message_content(turn.text, [], turn.tool_results)
+        if not (turn.text or "").strip() and isinstance(assistant_content, str):
             raise ValueError("agent returned an empty reply")
-        assistant_message = _chat_message("assistant", turn.text)
+        assistant_message = _chat_message("assistant", assistant_content)
         assistant_message["reply_job_id"] = reply_job_id
         assistant_message["reply_to_message_ids"] = list(message_ids)
 
@@ -457,6 +461,9 @@ class AgentService:
                     latest.summary_generation = snapshot_session.summary_generation
                 latest.touch()
                 await self.session_service.save(latest)
+                for tool in context.tools:
+                    if isinstance(tool, SendHealthReportTool):
+                        tool.acknowledge()
                 if self.persona_service is not None:
                     try:
                         self.persona_service.on_assistant_message(
@@ -671,13 +678,26 @@ class AgentService:
     def _assistant_message_content(
         text: str,
         actions: list[dict],
+        tool_results: list[dict] | None = None,
     ) -> str | list[dict]:
-        if not actions:
+        report_actions = []
+        for result in tool_results or []:
+            if result.get('name') != 'send_health_report':
+                continue
+            try:
+                report_id = json.loads(result['result']).get('chat_report_id')
+            except (ValueError, TypeError, KeyError, AttributeError):
+                continue
+            if isinstance(report_id, str) and re.fullmatch(r'[a-f0-9]{32}', report_id):
+                action = {'type': 'open_health_report', 'label': '健康周报', 'report_id': report_id}
+                if action not in report_actions:
+                    report_actions.append(action)
+        if not actions and not report_actions:
             return text
         text = AgentService._with_action_guidance(text, actions)
         return [
             {"type": "text", "text": text},
-            {"type": "actions", "actions": actions},
+            {"type": "actions", "actions": [*actions, *report_actions]},
         ]
 
     @staticmethod
@@ -892,12 +912,15 @@ class AgentService:
             session.messages.append(
                 _chat_message(
                     "assistant",
-                    self._assistant_message_content(turn.text, onboarding_actions),
+                    self._assistant_message_content(turn.text, onboarding_actions, turn.tool_results),
                 )
             )
             session.last_prompt_tokens = int(turn.usage.get("prompt_tokens") or 0)
             session.touch()
             await self.session_service.save(session)
+            for tool in context.tools:
+                if isinstance(tool, SendHealthReportTool):
+                    tool.acknowledge()
             if self.persona_service is not None:
                 try:
                     self.persona_service.on_assistant_message(
@@ -1011,11 +1034,15 @@ class AgentService:
                     self._assistant_message_content(
                         turn.text or "（无回复）",
                         onboarding_actions,
+                        turn.tool_results,
                     )
                 )
                 session.last_prompt_tokens = int(turn.usage.get("prompt_tokens") or 0)
                 session.touch()
                 await self.session_service.save(session)
+                for tool in context.tools:
+                    if isinstance(tool, SendHealthReportTool):
+                        tool.acknowledge()
                 if self.persona_service is not None:
                     try:
                         self.persona_service.on_assistant_message(

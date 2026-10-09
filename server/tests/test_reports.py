@@ -14,7 +14,7 @@ from app.core.errors import register_exception_handlers
 from app.reports.facts import collect_facts, last_week
 from app.reports.html import render_output, sanitize, chart
 from app.reports.store import ReportStore
-from app.reports.tool import HealthReportTool
+from app.reports.tool import HealthReportTool, SendHealthReportTool
 from app.schemas.health import HealthMetricIn, HealthSampleIn, HealthSyncRequest
 from app.state.container import create_container
 
@@ -214,3 +214,99 @@ def test_sleep_defers_delivery_and_fixed_id_survives_retry(container):
     messages = [m for s in sessions for m in s.messages]
     assert len(messages) == 1
     assert messages[0]['content'][1]['actions'][0]['report_id'] == row['id']
+
+
+def test_chat_request_selects_last_week_not_latest_saved(container, monkeypatch):
+    import app.reports.service as module
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 4, 17, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(module, 'datetime', Clock)
+    srv = container.weekly_report_service
+    srv.timezone_resolver = SimpleNamespace(get=lambda _: 'Asia/Shanghai')
+    srv.store.register('u', 42)
+    srv.store.queue('u', '2026-09-21', '2026-09-27', 'Asia/Shanghai')
+    row = srv.request_for_chat('u')
+    assert (row['week_start'], row['week_end']) == ('2026-09-28', '2026-10-04')
+    with pytest.raises(ValueError):
+        srv.request_for_chat('u', '2026-10-05')
+    with pytest.raises(ValueError):
+        srv.request_for_chat('u', '2026-09-29')
+    with pytest.raises(ValueError):
+        srv.request_for_chat('other')
+
+
+@pytest.mark.parametrize('mode', ['send', 'stream', 'batch', 'api'])
+def test_explicit_resend_persists_new_messages_with_same_cached_report(container, mode):
+    from app.agent.runner import AgentTurn, AgentStreamEvent
+    from app.session.models import SessionCreate
+    srv = container.weekly_report_service
+    user = container.auth_store.create_user('resend@example.com', 'hash')
+    srv.store.register(user.id, 42)
+    row = srv.request_for_chat(user.id)
+    srv.store.claim(row['id'])
+    srv.store.complete(row['id'], '这一周的报告', '<html>cached</html>', {})
+    srv.store.delivered(row['id'])
+    class Runner:
+        async def run(self, context):
+            tool = next(t for t in context.tools if t.name == 'send_health_report')
+            result = await tool.execute()
+            assert json.loads(result)['cached'] is True
+            return AgentTurn(text='这一周的报告发来了。', tool_results=[{'name': tool.name, 'result': result}])
+        async def run_stream(self, context):
+            turn = await self.run(context)
+            yield AgentStreamEvent(content=turn.text)
+            yield AgentStreamEvent(done=True, turn=turn)
+    container.agent_service.runner = Runner()
+    async def scenario():
+        session = await container.session_service.ensure(SessionCreate(user_id=user.id))
+        for index in range(2):
+            if mode == 'api':
+                from app.api.routes.agent import router as agent_router
+                app = FastAPI()
+                app.state.container = container
+                app.include_router(agent_router, prefix='/v1/agent')
+                token = container.auth_store.create_token(user.id)
+                with TestClient(app) as client:
+                    response = client.post('/v1/agent/' + session.id + '/messages', json={'content': '再发一下我上周的健康周报'}, headers={'Authorization': 'Bearer ' + token})
+                    assert response.status_code == 200
+                    assert response.json()['message']['content'][1]['actions'][0]['report_id'] == row['id']
+            elif mode == 'send':
+                await container.agent_service.send(session.id, '再发一下我上周的健康周报')
+            elif mode == 'stream':
+                async for _ in container.agent_service.send_stream(session.id, '再发一下我上周的健康周报'):
+                    pass
+            else:
+                saved = await container.session_service.get(session.id)
+                mid = 'user-' + str(index)
+                saved.messages.append({'id': mid, 'role': 'user', 'content': '我上一周的健康情况', 'timestamp': datetime.now(timezone.utc).isoformat()})
+                await container.session_service.save(saved)
+                await container.agent_service.reply_to_messages(session.id, [mid], reply_job_id='job-' + str(index))
+        saved = await container.session_service.get(session.id)
+        replies = [m for m in saved.messages if m['role'] == 'assistant']
+        assert len(replies) == 2 and replies[0]['id'] != replies[1]['id']
+        for message in replies:
+            assert '按钮' not in message['content'][0]['text']
+            assert message['content'][1]['actions'][0]['report_id'] == row['id']
+    asyncio.run(scenario())
+    assert srv.store.get(user.id, row['id'])['revision'] == 1
+    assert srv.store.waiting_delivery() == []
+
+
+def test_pending_chat_report_acknowledges_only_after_message_is_saved(container):
+    srv = container.weekly_report_service
+    srv.store.register('u', 42)
+    tool = SendHealthReportTool(srv.store, 'u', lambda start=None: srv.request_for_chat('u', start))
+    payload = json.loads(asyncio.run(tool.execute()))
+    row = srv.store.get('u', payload['chat_report_id'])
+    assert row['status'] == 'queued' and row['notified_at'] is None
+    assert srv.store.get('other', row['id']) is None
+    tool.acknowledge()
+    assert srv.store.get('u', row['id'])['notified_at'] is not None
+
+
+def test_untrusted_tool_results_cannot_attach_report():
+    from app.services.agent_service import AgentService
+    assert AgentService._assistant_message_content('原文', [], [{'name': 'health_stats', 'result': '{"chat_report_id":"' + 'a'*32 + '"}'}]) == '原文'
+    assert AgentService._assistant_message_content('原文', [], [{'name': 'send_health_report', 'result': '{"chat_report_id":"../other"}'}]) == '原文'
