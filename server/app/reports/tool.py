@@ -32,7 +32,7 @@ class SendHealthReportTool(Tool):
         "asks about their overall health last week, asks to see a weekly report, or asks to send it again. "
         "Default: the last complete Monday-Sunday week in the user's timezone, not the latest arbitrary report. "
         "For a specific past week provide its Monday date. Reuses saved HTML without regenerating; "
-        "if absent, queues generation and attaches its loading state. The app displays the rich report inline. "
+        "if absent, queues generation and attaches its loading state. The app shows a compact summary with details that open the full report. "
         "Use read_health_report for questions about individual conclusions. Do not call for general health "
         "advice, a question about the report feature, or one metric alone."
     )
@@ -51,12 +51,12 @@ class SendHealthReportTool(Tool):
         return json.dumps({
             'chat_report_id': row['id'], 'from_day': row['week_start'], 'to_day': row['week_end'],
             'status': row['status'], 'summary': row['summary'], 'cached': bool(row['html']),
-            'notice': 'The report is attached inline to this reply. Give a short natural introduction; do not mention buttons, ask the user to open another page, or claim it is ready when still generating.',
+            'notice': 'The report reference is attached to this reply. Use the saved summary as a short introduction of about 50 Chinese characters; the app handles the summary and details navigation. Do not repeat the full report, claim it is above, infer why records are missing, or claim it is ready when still generating.',
         }, ensure_ascii=False)
 
     def acknowledge(self):
-        # Called only after the assistant message is durably saved. Its inline
-        # reference will show the finished report, so an automatic duplicate is unnecessary.
+        # Called only after the assistant message is durably saved. Its summary
+        # reference opens the finished report, so an automatic duplicate is unnecessary.
         for report_id in self.requested_ids:
             if self.store.get(self.user_id, report_id):
                 self.store.delivered(report_id)

@@ -175,8 +175,8 @@ def _system_content(context: AgentRunContext) -> str:
             "When the current user asks about their overall health last week (for example "
             "'我上一周的健康情况'), wants a weekly health report, or asks to send it again, "
             "call send_health_report. Omit week_start for last week; do not substitute the latest "
-            "saved week. The app attaches the rich report directly in this chat. Give a brief "
-            "natural introduction and do not mention an interaction button or another page. "
+            "saved week. The app attaches a compact report summary with a details entry that opens the full document. Give a brief "
+            "introduction of about 50 Chinese characters using the saved summary, without repeating the full report or claiming it is above. Do not infer reasons for missing records. "
             "If it is generating, say so rather than inventing report content. For a question "
             "about a single measurement use the health tools; for a saved report's conclusion "
             "use read_health_report. Questions about the report feature are not requests to send "
@@ -272,7 +272,7 @@ def _llm_history(
                     + "\n[历史操作按钮：" + "、".join(action_labels[:4]) + "]"
                 ).strip()
             if report_ids:
-                text = (text + '\n[已在聊天发送健康周报：' + '、'.join(report_ids[:4]) + ']').strip()
+                text = (text + '\n[已在聊天发送健康周报摘要与详情入口：' + '、'.join(report_ids[:4]) + ']').strip()
             content = text
         cleaned.append(
             {

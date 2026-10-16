@@ -15,12 +15,14 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import android.graphics.Color
 import androidx.lifecycle.lifecycleScope
@@ -72,6 +74,8 @@ class MainActivity : ComponentActivity() {
                 var loggingOut by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
                 var routeName by rememberSaveable { mutableStateOf(AuriRoute.Chat.name) }
+                var reportId by rememberSaveable { mutableStateOf<String?>(null) }
+                val chatStateHolder = key(token) { rememberSaveableStateHolder() }
                 var rechargeAmount by rememberSaveable { mutableStateOf(100) }
                 // An older saved screen may have been removed by this update.
                 val route = AuriRoute.entries.firstOrNull { it.name == routeName } ?: AuriRoute.Chat
@@ -135,6 +139,11 @@ class MainActivity : ComponentActivity() {
                         )
 
                         AuriRoute.Health -> HealthScreen(
+                            onBack = { routeName = AuriRoute.Chat.name },
+                        )
+
+                        AuriRoute.HealthReport -> HealthReportScreen(
+                            reportId = reportId.orEmpty(),
                             onBack = { routeName = AuriRoute.Chat.name },
                         )
 
@@ -231,13 +240,19 @@ class MainActivity : ComponentActivity() {
                             onPaid = { routeName = AuriRoute.Credits.name },
                         )
 
-                            AuriRoute.Chat -> ChatScreen(
+                            AuriRoute.Chat -> chatStateHolder.SaveableStateProvider("chat") {
+                                ChatScreen(
+                                onOpenHealthReport = { id ->
+                                    reportId = id
+                                    routeName = AuriRoute.HealthReport.name
+                                },
                                 onOpenSchedule = { routeName = AuriRoute.Schedule.name },
                                 onOpenHealth = { routeName = AuriRoute.Health.name },
                                 onOpenAccount = { routeName = AuriRoute.Account.name },
                                 onOpenSettings = { routeName = AuriRoute.ChatSettings.name },
                                 onOpenCredits = { routeName = AuriRoute.Credits.name },
                             )
+                            }
                         }
                     }
                 }
@@ -340,6 +355,7 @@ private enum class AuriRoute {
     Chat,
     Schedule,
     Health,
+    HealthReport,
     Account,
     ChatSettings,
     ChangePassword,

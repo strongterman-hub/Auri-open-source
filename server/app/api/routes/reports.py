@@ -61,11 +61,14 @@ async def generate(payload: GenerateRequest, container: ContainerDep, user: Curr
 
 
 @router.get('/{report_id}')
-async def get_report(report_id: str, container: ContainerDep, user: CurrentUserDep):
+async def get_report(report_id: str, container: ContainerDep, user: CurrentUserDep, include_html: bool = True):
     row = service(container).store.get(user.id, report_id)
     if row is None:
         raise HTTPException(404, '这份周报不存在或已删除')
-    return {k: row[k] for k in ('id', 'week_start', 'week_end', 'timezone', 'status', 'summary', 'html', 'created_at', 'updated_at', 'error', 'revision')}
+    result = {k: row[k] for k in ('id', 'week_start', 'week_end', 'timezone', 'status', 'summary', 'created_at', 'updated_at', 'error', 'revision')}
+    if include_html:
+        result['html'] = row['html']
+    return result
 
 
 @router.post('/{report_id}/refresh', status_code=202)

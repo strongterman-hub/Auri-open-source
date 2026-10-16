@@ -188,6 +188,14 @@ def test_routes_are_owner_scoped_and_old_clients_unsupported(container):
         assert client.get('/v1/health/reports').status_code == 401
         assert client.get('/v1/health/reports/' + row['id'], headers=headers[1]).status_code == 404
         assert client.get('/v1/health/reports/' + row['id'], headers=headers[0]).status_code == 200
+        store = container.weekly_report_service.store
+        assert store.claim(row['id'])
+        assert store.complete(row['id'], '一份简短摘要', '<p>仅详情页读取的完整正文</p>', {})
+        preview = client.get('/v1/health/reports/' + row['id'] + '?include_html=false', headers=headers[0]).json()
+        assert preview['summary'] == '一份简短摘要' and preview['revision'] == 1 and 'html' not in preview
+        detail = client.get('/v1/health/reports/' + row['id'], headers=headers[0]).json()
+        assert detail['html'] == '<p>仅详情页读取的完整正文</p>'
+        assert client.get('/v1/health/reports/' + row['id'] + '?include_html=false', headers=headers[1]).status_code == 404
         assert client.post('/v1/health/reports/client', json={'version_code': 39}, headers=headers[0]).status_code == 422
         assert client.post('/v1/health/reports/weekly', json={}, headers=headers[0]).status_code == 409
         assert client.post('/v1/health/reports/client', json={'version_code': 40}, headers=headers[0]).status_code == 200

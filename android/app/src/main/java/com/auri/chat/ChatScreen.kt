@@ -113,6 +113,7 @@ private sealed interface ChatListItem {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    onOpenHealthReport: (String) -> Unit = {},
     onOpenSchedule: () -> Unit = {},
     onOpenHealth: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -226,10 +227,15 @@ fun ChatScreen(
     val displayItems = buildChatDisplayItems(messages)
     val reversedItems = displayItems.asReversed()
     val listState = rememberLazyListState()
-    LaunchedEffect(messages.lastOrNull()?.id, messages.lastOrNull()?.content?.length) {
-        if (reversedItems.isNotEmpty()) {
+    val latestMessageKey = messages.lastOrNull()?.let { "${it.id}:${it.content.length}" }
+    // Re-entering from a report restores the saved position; only subsequent
+    // message changes should move the conversation to the latest reply.
+    var observedLatestMessageKey by remember { mutableStateOf(latestMessageKey) }
+    LaunchedEffect(latestMessageKey) {
+        if (observedLatestMessageKey != latestMessageKey && reversedItems.isNotEmpty()) {
             listState.scrollToItem(0)
         }
+        observedLatestMessageKey = latestMessageKey
     }
 
     val shouldLoadOlder by remember {
@@ -409,6 +415,7 @@ fun ChatScreen(
                                 portraitActive = portraitActive,
                                 onRetry = viewModel::retry,
                                 onAction = ::handleChatAction,
+                                onOpenHealthReport = onOpenHealthReport,
                             )
                         }
                     }
@@ -550,6 +557,7 @@ private fun MessageBubble(
     portraitActive: Boolean,
     onRetry: (String) -> Unit,
     onAction: (ChatAction) -> Unit,
+    onOpenHealthReport: (String) -> Unit,
 ) {
     val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
     val bubbleColor = when {
@@ -606,19 +614,17 @@ private fun MessageBubble(
                 message.files.forEach { file ->
                     FileAttachmentChip(file = file, contentColor = contentColor)
                 }
-                if (message.content.isNotEmpty()) {
+                val reportIds = if (message.isUser) emptyList() else message.actions
+                    .filter { it.type == "open_health_report" }.mapNotNull { it.reportId }.distinct()
+                if (message.content.isNotEmpty() && reportIds.isEmpty()) {
                     MarkdownText(
                         text = message.content,
                         modifier = Modifier.fillMaxWidth(),
                         color = contentColor,
                     )
                 }
-                if (!message.isUser) {
-                    message.actions.filter { it.type == "open_health_report" }
-                        .mapNotNull { it.reportId }.distinct().forEach { reportId ->
-                            Spacer(modifier = Modifier.height(10.dp))
-                            ChatWeeklyReport(reportId)
-                        }
+                reportIds.forEach { reportId ->
+                    ChatWeeklyReport(reportId, message.content, onOpenHealthReport)
                 }
                 val visibleActions = message.actions.filter {
                     it.type != "open_health_report" &&

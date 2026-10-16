@@ -42,9 +42,9 @@ internal class HealthReportApi {
         val array = request("GET", "", token).optJSONArray("reports") ?: return emptyList()
         return (0 until array.length()).map { parse(array.getJSONObject(it)) }
     }
-    fun get(token: String, id: String): WeeklyReport {
+    fun get(token: String, id: String, includeHtml: Boolean = true): WeeklyReport {
         require(id.matches(Regex("[a-f0-9]{32}"))) { "周报入口无效" }
-        return parse(request("GET", "/$id", token))
+        return parse(request("GET", "/$id?include_html=$includeHtml", token))
     }
     private fun parse(item: JSONObject) = WeeklyReport(
         id = item.getString("id"), weekStart = item.getString("week_start"), weekEnd = item.getString("week_end"),
