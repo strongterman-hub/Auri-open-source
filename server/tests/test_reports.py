@@ -51,15 +51,19 @@ class Model:
 
 
 @pytest.mark.parametrize('stamp,zone,start', [
-    ('2026-10-16T06:00:00+00:00', 'Asia/Shanghai', '2026-10-10'),
-    ('2026-10-04T17:00:00+00:00', 'Asia/Shanghai', '2026-09-29'),
-    ('2026-10-05T00:00:00+00:00', 'America/Los_Angeles', '2026-09-28'),
-    ('2026-01-01T00:00:00+00:00', 'Asia/Shanghai', '2025-12-26'),
-    ('2026-03-08T10:30:00+00:00', 'America/Los_Angeles', '2026-03-02'),
+    ('2026-10-16T06:00:00+00:00', 'Asia/Shanghai', '2026-10-09'),
+    ('2026-10-15T15:59:00+00:00', 'Asia/Shanghai', '2026-10-08'),
+    ('2026-10-15T16:00:00+00:00', 'Asia/Shanghai', '2026-10-09'),
+    ('2026-10-04T17:00:00+00:00', 'Asia/Shanghai', '2026-09-28'),
+    ('2026-10-05T00:00:00+00:00', 'America/Los_Angeles', '2026-09-27'),
+    ('2026-01-01T00:00:00+00:00', 'Asia/Shanghai', '2025-12-25'),
+    ('2026-03-08T10:30:00+00:00', 'America/Los_Angeles', '2026-03-01'),
 ])
 def test_rolling_seven_local_dates(stamp, zone, start):
     begin, end = recent_week(datetime.fromisoformat(stamp), zone)
     assert begin.isoformat() == start and (end - begin).days == 6
+    from zoneinfo import ZoneInfo
+    assert end == datetime.fromisoformat(stamp).astimezone(ZoneInfo(zone)).date() - timedelta(days=1)
 
 
 def test_zero_missing_coverage_and_comparison(container):
@@ -231,22 +235,22 @@ def test_chat_request_selects_rolling_window_not_latest_saved(container, monkeyp
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime(2026, 10, 4, 17, tzinfo=timezone.utc).astimezone(tz)
+            return datetime(2026, 10, 16, 6, tzinfo=timezone.utc).astimezone(tz)
     monkeypatch.setattr(module, 'datetime', Clock)
     srv = container.weekly_report_service
     srv.timezone_resolver = SimpleNamespace(get=lambda _: 'Asia/Shanghai')
     srv.store.register('u', 42)
-    old = srv.store.queue('u', '2026-09-28', '2026-10-04', 'Asia/Shanghai')
+    old = srv.store.queue('u', '2026-10-05', '2026-10-11', 'Asia/Shanghai')
     srv.store.claim(old['id']); srv.store.complete(old['id'], '旧周期摘要', '<p>原报告</p>', {})
     row = srv.request_for_chat('u')
     assert row['id'] != old['id'] and srv.store.get('u',old['id'])['html']=='<p>原报告</p>'
-    assert (row['week_start'], row['week_end']) == ('2026-09-29', '2026-10-05')
+    assert (row['week_start'], row['week_end']) == ('2026-10-09', '2026-10-15')
     explicit = srv.request_for_chat('u', '2026-09-23')
     assert (explicit['week_start'], explicit['week_end']) == ('2026-09-23', '2026-09-29')
     with pytest.raises(ValueError):
-        srv.request_for_chat('u', '2026-10-05')
+        srv.request_for_chat('u', '2026-10-10')
     with pytest.raises(ValueError):
-        srv.request_for_chat('u', '2026-09-30')
+        srv.request_for_chat('u', '2026-10-17')
     with pytest.raises(ValueError):
         srv.request_for_chat('other')
 
@@ -402,15 +406,16 @@ def test_whole_generation_deadline_cancels_stalled_work(container):
     assert 'Credits' not in saved['error']
 
 
-def test_open_day_has_deterministic_notice_and_no_full_period_comparison(container):
+def test_only_closed_days_are_reported_without_period_boilerplate(container):
     add_steps(container, 'u')
-    e = collect_facts(container.health_service, 'u', START, END, 'Asia/Shanghai', as_of=datetime(2026,10,4,6,tzinfo=timezone.utc))
-    assert '2026-10-04 14:00' in e['facts']['period.note'] and '尚未结束' in e['facts']['period.note']
-    assert not any(key.endswith(('.delta','.delta_pct','.previous_avg')) for key in e['facts'])
-    _, html = render_output(output(), e)
-    assert e['facts']['period.note'] in html and '2026-09-28 — 2026-10-04' in html
+    with pytest.raises(ValueError, match='report_period_must_end_before_today'):
+        collect_facts(container.health_service, 'u', START, END, 'Asia/Shanghai', as_of=datetime(2026,10,4,6,tzinfo=timezone.utc))
     closed = collect_facts(container.health_service, 'u', START, END, 'Asia/Shanghai', as_of=datetime(2026,10,5,6,tzinfo=timezone.utc))
-    assert 'STEPS.delta' in closed['facts'] and '尚未结束' not in closed['facts']['period.note']
+    assert 'STEPS.delta' in closed['facts'] and 'period.note' not in closed['facts']
+    _, html = render_output(output(), closed)
+    assert '2026-09-28 — 2026-10-04' in html
+    for phrase in ('尚未结束','记录不完整','本报告排除今天'):
+        assert phrase not in html
 
 
 def test_original_report_resend_by_id_keeps_dates_and_never_queues(container):
@@ -450,7 +455,19 @@ def test_scheduler_creates_rolling_window_once_not_each_day(container):
     now=datetime(2026,10,5,4,tzinfo=timezone.utc)
     asyncio.run(srv.tick(now))
     rows=srv.store.list(user.id)
-    assert len(rows)==1 and (rows[0]['week_start'],rows[0]['week_end'])==('2026-09-29','2026-10-05')
+    assert len(rows)==1 and (rows[0]['week_start'],rows[0]['week_end'])==('2026-09-28','2026-10-04')
     with srv.store.connect() as db:db.execute('UPDATE weekly_reports SET created_at=? WHERE id=?',(now.timestamp(),rows[0]['id']))
     asyncio.run(srv.tick(now+timedelta(days=1)))
     assert len(srv.store.list(user.id))==1
+
+
+def test_repaired_period_preserves_original_message_id_and_refresh(container):
+    store=container.weekly_report_service.store
+    row=store.queue('u','2026-10-10','2026-10-16','Asia/Shanghai')
+    store.claim(row['id']);store.complete(row['id'],'摘要','<p>缓存</p>',{})
+    with store.connect() as db:db.execute("UPDATE weekly_reports SET week_start='2026-10-09',week_end='2026-10-15' WHERE id=?",(row['id'],))
+    fixed=store.queue('u','2026-10-09','2026-10-15','Asia/Shanghai')
+    assert fixed['id']==row['id'] and fixed['html']=='<p>缓存</p>'
+    refreshed=store.queue('u','2026-10-09','2026-10-15','Asia/Shanghai',refresh=True)
+    assert refreshed['id']==row['id'] and refreshed['status']=='queued' and refreshed['html']=='<p>缓存</p>'
+    assert len(store.list('u'))==1 and store.get('other',row['id']) is None

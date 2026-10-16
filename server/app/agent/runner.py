@@ -174,7 +174,7 @@ def _system_content(context: AgentRunContext) -> str:
             "\n\n[WEEKLY HEALTH REPORTS]\n"
             "When the current user asks about their overall health last week (for example "
             "'我上一周的健康情况'), wants a weekly health report, or asks to send it again, "
-            "call send_health_report. By default omit week_start: use the seven local dates ending today, not Monday-Sunday. "
+            "call send_health_report. By default omit week_start: use the seven complete local dates ending yesterday, excluding today; do not use Monday-Sunday. Do not add an explanation about today being incomplete. "
             "For a clearly specified historical date range pass its first date as week_start. To resend an original report, pass its report_id from history, preserving that period. "
             "The app attaches a compact report summary with a details entry that opens the full document. Give a brief "
             "introduction of about 50 Chinese characters using the saved summary, without repeating the full report or claiming it is above. Do not infer reasons for missing records. "

@@ -57,6 +57,8 @@ class ReportStore:
         now = time.time()
         with self.connect() as db:
             db.execute('INSERT OR IGNORE INTO weekly_reports(id,user_id,week_start,week_end,timezone,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)', (report_id, user_id, start, end, timezone_name, 'queued', now, now))
+            # A repaired period retains the original message's stable report ID.
+            report_id = db.execute('SELECT id FROM weekly_reports WHERE user_id=? AND week_start=?', (user_id, start)).fetchone()[0]
             if refresh:
                 db.execute("UPDATE weekly_reports SET status='queued',attempts=0,retry_at=0,error=NULL WHERE id=? AND status IN ('ready','failed','queued')", (report_id,))
         return self.get(user_id, report_id)

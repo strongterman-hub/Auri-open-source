@@ -30,7 +30,7 @@ class SendHealthReportTool(Tool):
     description = (
         "Send this account's weekly health report directly in the current chat when the user "
         "asks about their overall health last week, asks to see a weekly report, or asks to send it again. "
-        "Default: the seven local dates ending today (today minus six days through today), not a calendar week. "
+        "Default: the seven complete local dates ending yesterday (today minus seven days through yesterday), not a calendar week. "
         "For an explicit historical range provide its starting date, which need not be Monday. "
         "To resend an original report, pass its report_id from history; never replace its dates with today's range. Reuses saved HTML without regenerating; "
         "if absent, queues generation and attaches its loading state. The app shows a compact summary with details that open the full report. "
@@ -38,7 +38,7 @@ class SendHealthReportTool(Tool):
         "advice, a question about the report feature, or one metric alone."
     )
     parameters = {'type': 'object', 'properties': {
-        'week_start': {'type': 'string', 'description': 'Optional first date YYYY-MM-DD of an explicit seven-day range; omit for the seven dates ending today.'},
+        'week_start': {'type': 'string', 'description': 'Optional first date YYYY-MM-DD of an explicit seven-day range; omit for the seven complete dates ending yesterday.'},
         'report_id': {'type': 'string', 'description': 'Existing report ID from chat history when resending that original report. Do not combine with week_start.'},
     }, 'required': [], 'additionalProperties': False}
 
