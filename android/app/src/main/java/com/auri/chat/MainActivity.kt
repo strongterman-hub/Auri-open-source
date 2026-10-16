@@ -72,10 +72,9 @@ class MainActivity : ComponentActivity() {
                 var loggingOut by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
                 var routeName by rememberSaveable { mutableStateOf(AuriRoute.Chat.name) }
-                var reportId by rememberSaveable { mutableStateOf<String?>(null) }
-                var reportsReturn by rememberSaveable { mutableStateOf(AuriRoute.Health.name) }
                 var rechargeAmount by rememberSaveable { mutableStateOf(100) }
-                val route = AuriRoute.valueOf(routeName)
+                // An older saved screen may have been removed by this update.
+                val route = AuriRoute.entries.firstOrNull { it.name == routeName } ?: AuriRoute.Chat
                 LaunchedEffect(token, privacyAgreed) {
                     val reportToken = token
                     if (reportToken != null && privacyAgreed) {
@@ -137,15 +136,6 @@ class MainActivity : ComponentActivity() {
 
                         AuriRoute.Health -> HealthScreen(
                             onBack = { routeName = AuriRoute.Chat.name },
-                            onOpenReports = {
-                                reportId = null; reportsReturn = AuriRoute.Health.name
-                                routeName = AuriRoute.HealthReports.name
-                            },
-                        )
-
-                        AuriRoute.HealthReports -> HealthReportScreen(
-                            initialReportId = reportId,
-                            onBack = { routeName = reportsReturn },
                         )
 
                         AuriRoute.Account -> AccountCenterScreen(
@@ -242,10 +232,6 @@ class MainActivity : ComponentActivity() {
                         )
 
                             AuriRoute.Chat -> ChatScreen(
-                                onOpenHealthReport = { id ->
-                                    reportId = id; reportsReturn = AuriRoute.Chat.name
-                                    routeName = AuriRoute.HealthReports.name
-                                },
                                 onOpenSchedule = { routeName = AuriRoute.Schedule.name },
                                 onOpenHealth = { routeName = AuriRoute.Health.name },
                                 onOpenAccount = { routeName = AuriRoute.Account.name },
@@ -354,7 +340,6 @@ private enum class AuriRoute {
     Chat,
     Schedule,
     Health,
-    HealthReports,
     Account,
     ChatSettings,
     ChangePassword,

@@ -73,7 +73,7 @@ class ReportStore:
     def claim(self, report_id):
         now = time.time()
         with self.connect() as db:
-            return db.execute("UPDATE weekly_reports SET status='generating',attempts=attempts+1,lease_until=? WHERE id=? AND attempts<3 AND retry_at<=? AND (status='queued' OR (status='generating' AND lease_until<?))", (now + 600, report_id, now, now)).rowcount == 1
+            return db.execute("UPDATE weekly_reports SET status='generating',attempts=attempts+1,lease_until=?,error=NULL WHERE id=? AND attempts<3 AND retry_at<=? AND (status='queued' OR (status='generating' AND lease_until<?))", (now + 600, report_id, now, now)).rowcount == 1
 
     def complete(self, report_id, summary, document, evidence):
         with self.connect() as db:
@@ -83,9 +83,9 @@ class ReportStore:
         with self.connect() as db:
             db.execute("UPDATE weekly_reports SET status='ready',lease_until=0,error=NULL WHERE id=? AND status='generating'", (report_id,))
 
-    def fail(self, report_id, message):
+    def fail(self, report_id, message, *, retryable=True):
         with self.connect() as db:
-            db.execute("UPDATE weekly_reports SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END,retry_at=?,lease_until=0,error=? WHERE id=?", (time.time() + 1800, message, report_id))
+            db.execute("UPDATE weekly_reports SET status=CASE WHEN attempts>=3 OR ?=0 THEN 'failed' ELSE 'queued' END,retry_at=?,lease_until=0,error=?,updated_at=? WHERE id=?", (int(retryable), time.time() + 60 if retryable else 0, message, time.time(), report_id))
 
     def waiting_delivery(self):
         with self.connect() as db:

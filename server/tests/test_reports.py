@@ -172,7 +172,7 @@ def test_fact_review_failure_never_publishes_report(container):
     row = srv.store.queue('u', str(START), str(END), 'Asia/Shanghai')
     asyncio.run(srv.generate(row))
     row = srv.store.get('u', row['id'])
-    assert row['status'] == 'queued' and row['html'] == '' and row['notified_at'] is None
+    assert row['status'] == 'failed' and row['html'] == '' and row['notified_at'] is None
 
 
 def test_routes_are_owner_scoped_and_old_clients_unsupported(container):
@@ -310,3 +310,79 @@ def test_untrusted_tool_results_cannot_attach_report():
     from app.services.agent_service import AgentService
     assert AgentService._assistant_message_content('原文', [], [{'name': 'health_stats', 'result': '{"chat_report_id":"' + 'a'*32 + '"}'}]) == '原文'
     assert AgentService._assistant_message_content('原文', [], [{'name': 'send_health_report', 'result': '{"chat_report_id":"../other"}'}]) == '原文'
+
+
+@pytest.mark.parametrize('stamp', [1791165600, 1791165600000])
+def test_real_sync_timestamp_units_collect_and_generate(container, stamp):
+    uid = 'timestamp-fixture'
+    metric = HealthMetricIn(metric_type='STEPS', day=str(START), value1=6000, updated_at=stamp)
+    container.health_service.sync(uid, HealthSyncRequest(from_day=str(START), to_day=str(END), metrics=[metric], metric_types=['STEPS']))
+    evidence = collect_facts(container.health_service, uid, START, END, 'Asia/Shanghai')
+    assert evidence['facts']['data.updated_at'] == '2026-10-05 10:00'
+    srv = container.weekly_report_service
+    srv.llm = Model()
+    row = srv.store.queue(uid, str(START), str(END), 'Asia/Shanghai')
+    asyncio.run(srv.generate(row))
+    saved = srv.store.get(uid, row['id'])
+    assert saved['status'] == 'ready' and saved['html'] and srv.llm.calls == 2
+
+
+def test_mixed_and_malformed_sync_timestamps():
+    from zoneinfo import ZoneInfo
+    from app.reports.facts import updated_time
+    zone = ZoneInfo('Asia/Shanghai')
+    # The later record is in seconds, the older record in milliseconds.
+    rows = [SimpleNamespace(updated_at=v) for v in [1791165600000, 1791252000, None, float('inf'), 10**30, 'bad']]
+    assert updated_time(rows, zone) == '2026-10-06 10:00'
+    assert updated_time(rows[2:], zone) == '未提供同步时间'
+
+
+def test_missing_data_is_terminal_after_first_attempt(container):
+    srv = container.weekly_report_service
+    srv.llm = Model()
+    row = srv.store.queue('empty', str(START), str(END), 'Asia/Shanghai')
+    asyncio.run(srv.generate(row))
+    saved = srv.store.get('empty', row['id'])
+    assert saved['status'] == 'failed' and saved['attempts'] == 1 and saved['retry_at'] == 0
+    assert '没有可用健康记录' in saved['error'] and 'Credits' not in saved['error']
+    assert not srv.store.pending() and srv.llm.calls == 0
+
+
+@pytest.mark.parametrize('failure,terminal,expected', [('credits', True, 'Credits'), ('network', False, '服务暂时不可用')])
+def test_generation_error_reason_and_retry_policy(container, failure, terminal, expected):
+    from app.billing.service import InsufficientCreditsError
+    class FailureModel(Model):
+        async def complete_structured(self, *args, **kwargs):
+            raise InsufficientCreditsError() if failure == 'credits' else OSError('synthetic network failure')
+    add_steps(container, 'u')
+    srv = container.weekly_report_service
+    srv.llm = FailureModel()
+    row = srv.store.queue('u', str(START), str(END), 'Asia/Shanghai')
+    before = time.time()
+    asyncio.run(srv.generate(row))
+    saved = srv.store.get('u', row['id'])
+    assert saved['status'] == ('failed' if terminal else 'queued') and expected in saved['error']
+    if not terminal:
+        assert before + 55 <= saved['retry_at'] <= time.time() + 65
+        assert 'Credits' not in saved['error']
+        with srv.store.connect() as db:
+            db.execute('UPDATE weekly_reports SET retry_at=0 WHERE id=?', (row['id'],))
+        assert srv.store.claim(row['id'])
+        assert srv.store.get('u', row['id'])['error'] is None
+
+
+def test_whole_generation_deadline_cancels_stalled_work(container):
+    srv = container.weekly_report_service
+    srv.generation_timeout_seconds = 0.01
+    cancelled = []
+    async def stalled(row):
+        try:
+            await asyncio.sleep(10)
+        finally:
+            cancelled.append(True)
+    srv._generate = stalled
+    row = srv.store.queue('u', str(START), str(END), 'Asia/Shanghai')
+    asyncio.run(srv.generate(row))
+    saved = srv.store.get('u', row['id'])
+    assert cancelled and saved['status'] == 'queued' and '超时' in saved['error']
+    assert 'Credits' not in saved['error']

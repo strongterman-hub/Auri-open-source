@@ -1,5 +1,6 @@
 package com.auri.chat
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,8 +32,11 @@ internal fun ChatWeeklyReport(reportId: String) {
     var reload by remember(reportId) { mutableStateOf(0) }
     var retryGeneration by remember(reportId) { mutableStateOf(false) }
     var heightDp by remember(reportId) { mutableStateOf(400f) }
+    var elapsedMs by remember(reportId) { mutableStateOf(0L) }
     LaunchedEffect(reportId, reload) {
         error = ""
+        elapsedMs = 0L
+        val started = SystemClock.elapsedRealtime()
         try {
             if (retryGeneration) {
                 withContext(Dispatchers.IO) { api.refresh(token, reportId) }
@@ -41,8 +45,9 @@ internal fun ChatWeeklyReport(reportId: String) {
             while (true) {
                 val fetched = withContext(Dispatchers.IO) { api.get(token, reportId) }
                 report = fetched
+                elapsedMs = SystemClock.elapsedRealtime() - started
                 if (fetched.status !in listOf("queued", "generating")) break
-                delay(4_000)
+                delay(if (elapsedMs >= 45_000 || fetched.error.isNotBlank()) 15_000 else 4_000)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -50,24 +55,31 @@ internal fun ChatWeeklyReport(reportId: String) {
             error = readableNetworkError(e, "周报暂时无法加载")
         }
     }
+    val presentation = weeklyReportPresentation(report, elapsedMs)
     Column(Modifier.fillMaxWidth()) {
-        if (error.isNotEmpty()) {
-            Text(error, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { reload++ }) { Text("重试加载") }
-        } else if (report?.html?.isNotBlank() == true) {
-            if (report!!.status == "failed") {
-                Text(report!!.error.ifBlank { "更新暂未完成，以下是已保存的报告" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (presentation == WeeklyReportPresentation.Ready) {
+            if (error.isNotEmpty()) {
+                Text("更新暂时无法读取，已保存的周报仍可阅读。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { reload++ }) { Text("重试加载") }
+            } else if (report!!.error.isNotBlank()) {
+                Text(report!!.error, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { retryGeneration = true; reload++ }) { Text("重试更新") }
             }
             ReportWebView(report!!.html, Modifier.fillMaxWidth().height(heightDp.dp)) { measured ->
                 val next = (measured + 2f).coerceIn(96f, 30_000f)
                 if (kotlin.math.abs(next - heightDp) > 1f) heightDp = next
             }
-        } else if (report?.status == "failed") {
+        } else if (error.isNotEmpty()) {
+            Text(error, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { reload++ }) { Text("重试加载") }
+        } else if (presentation == WeeklyReportPresentation.Failed) {
             Text(report!!.error.ifBlank { "周报暂未生成，请同步健康记录后重试" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { retryGeneration = true; reload++ }) { Text("重试生成") }
+        } else if (presentation == WeeklyReportPresentation.Background) {
+            Text("周报仍在后台整理，你可以继续聊天。", color = MaterialTheme.colorScheme.onSurface)
+            Text("生成完成后会在这里显示，无需一直等待。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            Text("Auri 正在整理这周的健康周报", color = MaterialTheme.colorScheme.onSurface)
+            Text(if (report == null) "正在读取周报…" else "Auri 正在整理这周的健康周报", color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(12.dp))
             CircularProgressIndicator()
             report?.error?.takeIf { it.isNotBlank() }?.let {

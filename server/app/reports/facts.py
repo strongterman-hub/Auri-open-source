@@ -33,6 +33,23 @@ def display(value, unit=""):
     return "暂无记录" if value is None else f"{value:g}{unit}"
 
 
+def updated_time(records, zone):
+    times = []
+    for record in records:
+        try:
+            stamp = float(record.updated_at or 0)
+            if not math.isfinite(stamp) or stamp <= 0:
+                continue
+            # Xiaomi timestamps are milliseconds; imported records may use seconds.
+            # Normalize each record before comparing mixed sources.
+            if stamp >= 100_000_000_000:
+                stamp /= 1000
+            times.append(datetime.fromtimestamp(stamp, zone))
+        except (AttributeError, TypeError, ValueError, OverflowError, OSError):
+            continue
+    return max(times).strftime("%Y-%m-%d %H:%M") if times else "未提供同步时间"
+
+
 def collect_facts(health, user_id, start, end, timezone_name, scores_visible=True):
     previous = start - timedelta(days=7)
     metrics, samples = health.get_metrics(user_id, previous.isoformat(), end.isoformat(), timezone_name)
@@ -102,7 +119,6 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
             rows = {s.sleep_day: getattr(s, attr).score for s in eligible}
             add(key, label, "分", [rows.get(d) for d in days], [rows.get(d) for d in old_days], comparable=len(versions) == 1)
 
-    updated = max([m.updated_at for m in metrics] + [s.updated_at for s in samples] + [0])
-    facts["data.updated_at"] = datetime.fromtimestamp(updated, zone).strftime("%Y-%m-%d %H:%M") if updated else "未提供同步时间"
+    facts["data.updated_at"] = updated_time([*metrics, *samples], zone)
     return {"facts": facts, "series": series, "coverage": details,
             "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比上周升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]}

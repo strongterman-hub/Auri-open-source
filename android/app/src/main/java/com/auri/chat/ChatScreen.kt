@@ -114,7 +114,6 @@ private sealed interface ChatListItem {
 @Composable
 fun ChatScreen(
     onOpenSchedule: () -> Unit = {},
-    onOpenHealthReport: (String) -> Unit = {},
     onOpenHealth: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -149,7 +148,6 @@ fun ChatScreen(
 
     fun handleChatAction(action: ChatAction) {
         when (action.type) {
-            "open_health_report" -> action.reportId?.let(onOpenHealthReport)
             "enable_proactive" -> {
                 if (viewModel.proactiveEnabled) {
                     onOpenAccount()
