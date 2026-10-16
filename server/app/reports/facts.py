@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from zoneinfo import ZoneInfo
 
@@ -16,10 +16,9 @@ METRICS = {
 }
 
 
-def last_week(now: datetime, timezone_name: str):
+def recent_week(now: datetime, timezone_name: str):
     today = now.astimezone(ZoneInfo(timezone_name)).date()
-    start = today - timedelta(days=today.weekday() + 7)
-    return start, start + timedelta(days=6)
+    return today - timedelta(days=6), today
 
 
 def number(value):
@@ -50,12 +49,18 @@ def updated_time(records, zone):
     return max(times).strftime("%Y-%m-%d %H:%M") if times else "未提供同步时间"
 
 
-def collect_facts(health, user_id, start, end, timezone_name, scores_visible=True):
+def collect_facts(health, user_id, start, end, timezone_name, scores_visible=True, *, as_of=None):
+    local_now = (as_of or datetime.now(timezone.utc)).astimezone(ZoneInfo(timezone_name))
+    includes_today = end >= local_now.date()
     previous = start - timedelta(days=7)
     metrics, samples = health.get_metrics(user_id, previous.isoformat(), end.isoformat(), timezone_name)
     days = [(start + timedelta(days=i)).isoformat() for i in range(7)]
     old_days = [(previous + timedelta(days=i)).isoformat() for i in range(7)]
     facts = {"period.start": start.isoformat(), "period.end": end.isoformat(), "period.timezone": timezone_name}
+    facts['period.note'] = (
+        f'统计截至 {local_now:%Y-%m-%d %H:%M}；{local_now:%Y-%m-%d} 尚未结束，当天记录不完整，本期不直接与前期完整日做环比。'
+        if includes_today else '本报告覆盖所示连续七个日期，均值仅代表有记录的有效日。'
+    )
     facts.update({f'DAY.{day}': day for day in days})
     series, details = {}, {}
 
@@ -73,7 +78,7 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
             facts[f"{key}.total"] = display(sum(valid), unit)
         for day, value in zip(days, values):
             facts[f"{key}.{day}"] = display(value, unit)
-        if comparable and len(valid) >= 5 and len(prior) >= 5:
+        if comparable and not includes_today and len(valid) >= 5 and len(prior) >= 5:
             delta = mean(valid) - mean(prior)
             facts[f"{key}.previous_avg"] = display(mean(prior), unit)
             facts[f"{key}.delta"] = display(delta, unit)
@@ -121,4 +126,4 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
 
     facts["data.updated_at"] = updated_time([*metrics, *samples], zone)
     return {"facts": facts, "series": series, "coverage": details,
-            "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比上周升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]}
+            "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比前期升降，包含今天时不将不完整日与前期完整日直接比较", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]}

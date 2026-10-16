@@ -30,21 +30,32 @@ class SendHealthReportTool(Tool):
     description = (
         "Send this account's weekly health report directly in the current chat when the user "
         "asks about their overall health last week, asks to see a weekly report, or asks to send it again. "
-        "Default: the last complete Monday-Sunday week in the user's timezone, not the latest arbitrary report. "
-        "For a specific past week provide its Monday date. Reuses saved HTML without regenerating; "
+        "Default: the seven local dates ending today (today minus six days through today), not a calendar week. "
+        "For an explicit historical range provide its starting date, which need not be Monday. "
+        "To resend an original report, pass its report_id from history; never replace its dates with today's range. Reuses saved HTML without regenerating; "
         "if absent, queues generation and attaches its loading state. The app shows a compact summary with details that open the full report. "
         "Use read_health_report for questions about individual conclusions. Do not call for general health "
         "advice, a question about the report feature, or one metric alone."
     )
-    parameters = {'type': 'object', 'properties': {'week_start': {'type': 'string', 'description': 'Optional Monday YYYY-MM-DD; omit for last week.'}}, 'required': [], 'additionalProperties': False}
+    parameters = {'type': 'object', 'properties': {
+        'week_start': {'type': 'string', 'description': 'Optional first date YYYY-MM-DD of an explicit seven-day range; omit for the seven dates ending today.'},
+        'report_id': {'type': 'string', 'description': 'Existing report ID from chat history when resending that original report. Do not combine with week_start.'},
+    }, 'required': [], 'additionalProperties': False}
 
     def __init__(self, store, user_id, request):
         self.store, self.user_id, self.request = store, user_id, request
         self.requested_ids = set()
 
-    async def execute(self, week_start=None):
+    async def execute(self, week_start=None, report_id=None):
         try:
-            row = self.request(week_start)
+            if report_id:
+                if week_start:
+                    raise ValueError('重发原报告时不要同时指定新的日期范围。')
+                row = self.store.get(self.user_id, report_id)
+                if row is None:
+                    raise ValueError('这份周报不存在或不属于当前账号。')
+            else:
+                row = self.request(week_start)
         except (ValueError, TypeError) as exc:
             return json.dumps({'error': str(exc)}, ensure_ascii=False)
         self.requested_ids.add(row['id'])

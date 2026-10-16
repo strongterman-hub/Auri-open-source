@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.api.routes.reports import router
 from app.config import Settings
 from app.core.errors import register_exception_handlers
-from app.reports.facts import collect_facts, last_week
+from app.reports.facts import collect_facts, recent_week
 from app.reports.html import render_output, sanitize, chart
 from app.reports.store import ReportStore
 from app.reports.tool import HealthReportTool, SendHealthReportTool
@@ -51,13 +51,15 @@ class Model:
 
 
 @pytest.mark.parametrize('stamp,zone,start', [
-    ('2026-10-05T00:00:00+00:00', 'Asia/Shanghai', '2026-09-28'),
-    ('2026-10-04T17:00:00+00:00', 'Asia/Shanghai', '2026-09-28'),
-    ('2026-10-05T00:00:00+00:00', 'America/Los_Angeles', '2026-09-21'),
-    ('2026-01-01T00:00:00+00:00', 'Asia/Shanghai', '2025-12-22'),
+    ('2026-10-16T06:00:00+00:00', 'Asia/Shanghai', '2026-10-10'),
+    ('2026-10-04T17:00:00+00:00', 'Asia/Shanghai', '2026-09-29'),
+    ('2026-10-05T00:00:00+00:00', 'America/Los_Angeles', '2026-09-28'),
+    ('2026-01-01T00:00:00+00:00', 'Asia/Shanghai', '2025-12-26'),
+    ('2026-03-08T10:30:00+00:00', 'America/Los_Angeles', '2026-03-02'),
 ])
-def test_natural_week(stamp, zone, start):
-    assert last_week(datetime.fromisoformat(stamp), zone)[0].isoformat() == start
+def test_rolling_seven_local_dates(stamp, zone, start):
+    begin, end = recent_week(datetime.fromisoformat(stamp), zone)
+    assert begin.isoformat() == start and (end - begin).days == 6
 
 
 def test_zero_missing_coverage_and_comparison(container):
@@ -224,7 +226,7 @@ def test_sleep_defers_delivery_and_fixed_id_survives_retry(container):
     assert messages[0]['content'][1]['actions'][0]['report_id'] == row['id']
 
 
-def test_chat_request_selects_last_week_not_latest_saved(container, monkeypatch):
+def test_chat_request_selects_rolling_window_not_latest_saved(container, monkeypatch):
     import app.reports.service as module
     class Clock(datetime):
         @classmethod
@@ -234,13 +236,17 @@ def test_chat_request_selects_last_week_not_latest_saved(container, monkeypatch)
     srv = container.weekly_report_service
     srv.timezone_resolver = SimpleNamespace(get=lambda _: 'Asia/Shanghai')
     srv.store.register('u', 42)
-    srv.store.queue('u', '2026-09-21', '2026-09-27', 'Asia/Shanghai')
+    old = srv.store.queue('u', '2026-09-28', '2026-10-04', 'Asia/Shanghai')
+    srv.store.claim(old['id']); srv.store.complete(old['id'], '旧周期摘要', '<p>原报告</p>', {})
     row = srv.request_for_chat('u')
-    assert (row['week_start'], row['week_end']) == ('2026-09-28', '2026-10-04')
+    assert row['id'] != old['id'] and srv.store.get('u',old['id'])['html']=='<p>原报告</p>'
+    assert (row['week_start'], row['week_end']) == ('2026-09-29', '2026-10-05')
+    explicit = srv.request_for_chat('u', '2026-09-23')
+    assert (explicit['week_start'], explicit['week_end']) == ('2026-09-23', '2026-09-29')
     with pytest.raises(ValueError):
         srv.request_for_chat('u', '2026-10-05')
     with pytest.raises(ValueError):
-        srv.request_for_chat('u', '2026-09-29')
+        srv.request_for_chat('u', '2026-09-30')
     with pytest.raises(ValueError):
         srv.request_for_chat('other')
 
@@ -394,3 +400,57 @@ def test_whole_generation_deadline_cancels_stalled_work(container):
     saved = srv.store.get('u', row['id'])
     assert cancelled and saved['status'] == 'queued' and '超时' in saved['error']
     assert 'Credits' not in saved['error']
+
+
+def test_open_day_has_deterministic_notice_and_no_full_period_comparison(container):
+    add_steps(container, 'u')
+    e = collect_facts(container.health_service, 'u', START, END, 'Asia/Shanghai', as_of=datetime(2026,10,4,6,tzinfo=timezone.utc))
+    assert '2026-10-04 14:00' in e['facts']['period.note'] and '尚未结束' in e['facts']['period.note']
+    assert not any(key.endswith(('.delta','.delta_pct','.previous_avg')) for key in e['facts'])
+    _, html = render_output(output(), e)
+    assert e['facts']['period.note'] in html and '2026-09-28 — 2026-10-04' in html
+    closed = collect_facts(container.health_service, 'u', START, END, 'Asia/Shanghai', as_of=datetime(2026,10,5,6,tzinfo=timezone.utc))
+    assert 'STEPS.delta' in closed['facts'] and '尚未结束' not in closed['facts']['period.note']
+
+
+def test_original_report_resend_by_id_keeps_dates_and_never_queues(container):
+    store = container.weekly_report_service.store
+    row = store.queue('u', '2026-09-28','2026-10-04','Asia/Shanghai')
+    store.claim(row['id']); store.complete(row['id'],'已保存摘要','<p>cached</p>',{})
+    def no_queue(*args):raise AssertionError('resend must not generate another period')
+    tool = SendHealthReportTool(store,'u',no_queue)
+    result = json.loads(asyncio.run(tool.execute(report_id=row['id'])))
+    assert result['cached'] and result['from_day']=='2026-09-28' and result['to_day']=='2026-10-04'
+    assert 'error' in json.loads(asyncio.run(SendHealthReportTool(store,'other',no_queue).execute(report_id=row['id'])))
+    assert 'error' in json.loads(asyncio.run(tool.execute(week_start='2026-10-01',report_id=row['id'])))
+    assert store.get('u',row['id'])['revision']==1 and len(store.list('u'))==1
+
+
+def test_automatic_cadence_uses_requests_and_resends_to_avoid_daily_reports(container):
+    store=container.weekly_report_service.store
+    assert store.automatic_due('u',1000)
+    row=store.queue('u','2026-09-28','2026-10-04','Asia/Shanghai')
+    with store.connect() as db:db.execute('UPDATE weekly_reports SET created_at=1000,notified_at=NULL WHERE id=?',(row['id'],))
+    assert not store.automatic_due('u',1000+86400)
+    assert not store.automatic_due('u',1000+7*86400-1)
+    assert store.automatic_due('u',1000+7*86400)
+    with store.connect() as db:db.execute('UPDATE weekly_reports SET notified_at=? WHERE id=?',(1000+6*86400,row['id']))
+    assert not store.automatic_due('u',1000+7*86400)
+
+
+def test_scheduler_creates_rolling_window_once_not_each_day(container):
+    from unittest.mock import AsyncMock
+    srv=container.weekly_report_service
+    user=container.auth_store.create_user('rolling-scheduler@example.com','hash')
+    srv.store.register(user.id,44)
+    srv.timezone_resolver=SimpleNamespace(get=lambda _: 'Asia/Shanghai')
+    container.proactive_settings_store.set_enabled(user.id,'default',True)
+    add_steps(container,user.id)
+    srv.generate=AsyncMock()
+    now=datetime(2026,10,5,4,tzinfo=timezone.utc)
+    asyncio.run(srv.tick(now))
+    rows=srv.store.list(user.id)
+    assert len(rows)==1 and (rows[0]['week_start'],rows[0]['week_end'])==('2026-09-29','2026-10-05')
+    with srv.store.connect() as db:db.execute('UPDATE weekly_reports SET created_at=? WHERE id=?',(now.timestamp(),rows[0]['id']))
+    asyncio.run(srv.tick(now+timedelta(days=1)))
+    assert len(srv.store.list(user.id))==1

@@ -46,6 +46,12 @@ class ReportStore:
         with self.connect() as db:
             return [r[0] for r in db.execute('SELECT user_id FROM report_clients WHERE enabled=1 AND version>=40')]
 
+    def automatic_due(self, user_id, now):
+        # Sliding windows must not create a new automatic report every day.
+        with self.connect() as db:
+            last = db.execute('SELECT MAX(CASE WHEN notified_at>created_at THEN notified_at ELSE created_at END) FROM weekly_reports WHERE user_id=?', (user_id,)).fetchone()[0]
+        return last is None or now - last >= 7 * 86400
+
     def queue(self, user_id, start, end, timezone_name, refresh=False):
         report_id = uuid5(NAMESPACE_URL, f'auri-weekly:{user_id}:{start}').hex
         now = time.time()
