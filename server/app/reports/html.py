@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 
 
 TOKEN = re.compile(r"\{\{(fact|chart):([A-Za-z0-9_.:-]+)\}\}")
-TAGS = {"section", "article", "div", "p", "h2", "h3", "h4", "strong", "b", "em", "small", "span", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "caption", "blockquote", "br", "hr"}
+TAGS = {"section", "article", "div", "p", "h2", "h3", "h4", "strong", "b", "em", "small", "span", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "caption", "blockquote", "br", "hr", "details", "summary"}
 CLASSES = {"card", "grid", "muted", "accent", "large", "table-wrap", "note", "pill"}
 
 
@@ -76,7 +76,8 @@ def render_output(value, evidence):
     if not isinstance(value, dict) or not all(isinstance(value.get(k), str) for k in ("summary", "html")):
         raise ValueError("invalid_report_schema")
     raw = value["html"]
-    if len(raw) > 45000 or len(raw) < 400:
+    sparse = max((d['valid_days'] for d in evidence['coverage'].values()), default=0) <= 2
+    if len(raw) > 45000 or len(raw) < (160 if sparse else 400):
         raise ValueError("report_length")
     facts, series = evidence["facts"], evidence["series"]
     def replace(match):
@@ -91,6 +92,8 @@ def render_output(value, evidence):
         return chart(series[metric], form or "bar")
     # Reject invented numeric measurements in prose/tables; all values use facts.
     for text in (value["summary"], raw):
+        if re.search(r'(\{\{fact:[A-Za-z0-9_.:-]+\}\})\s*(?:为|是)\s*\1', text):
+            raise ValueError("repeated_fact_statement")
         stripped = re.sub(r"<[^>]+>", "", TOKEN.sub("", text))
         if re.search(r"[0-9]", html.unescape(stripped)):
             raise ValueError("unreferenced_number")
@@ -102,14 +105,14 @@ def render_output(value, evidence):
         raise ValueError("missing_chart")
     if not re.search(r"\{\{fact:", safe):
         raise ValueError("no_evidence")
-    if len(re.sub(r"<[^>]+>|\{\{[^}]+\}\}", "", safe)) < 250:
+    if len(re.sub(r"<[^>]+>|\{\{[^}]+\}\}", "", safe)) < (90 if sparse else 250):
         raise ValueError("insufficient_report_content")
     body = TOKEN.sub(replace, safe)
     if "{{" in body:
         raise ValueError("invalid_placeholder")
     rows = "".join(f'<tr><td>{html.escape(d["label"])}</td><td>{d["valid_days"]}/7天</td></tr>' for d in evidence["coverage"].values())
     period = html.escape(f'{facts["period.start"]} — {facts["period.end"]}')
-    footer = f'<section class="card"><h3>这份回顾的数据范围</h3><p class="muted">{period} · {html.escape(facts["period.timezone"])}</p><table><tr><th>记录</th><th>有效天数</th></tr>{rows}</table><p class="muted">平均值按有效记录计算，图中空白代表缺测。主睡眠与午睡分开；穿戴评分反映记录中的变化。</p><p class="muted">数据更新时间：{html.escape(facts["data.updated_at"])}</p></section>'
+    footer = f'<details class="card"><summary>记录范围与计算口径</summary><p class="muted">{period} · {html.escape(facts["period.timezone"])}</p><table><tr><th>记录</th><th>有效天数</th></tr>{rows}</table><p class="muted">平均值按有效记录计算，图中空白代表缺测。主睡眠与午睡分开；穿戴评分反映记录中的变化。</p><p class="muted">数据更新时间：{html.escape(facts["data.updated_at"])}</p></details>'
     csp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'"
     document = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="{csp}"><title>健康周报</title><style>
 *{{box-sizing:border-box}}html{{color-scheme:dark}}body{{margin:0;background:#10101c;color:#eeeaf6;font:16px/1.85 system-ui,sans-serif;padding:24px 18px 40px}}main{{max-width:760px;margin:auto}}h1{{font-size:29px;line-height:1.35;margin:10px 0}}h2{{font-size:23px;line-height:1.5}}h3{{font-size:19px}}p{{margin:12px 0}}.eyebrow,.accent{{color:#bbaaff}}.muted,small{{color:#aaa4bb}}.card{{background:#1d1b2e;border:1px solid #363149;border-radius:20px;padding:20px;margin:20px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}}.large{{font-size:27px;font-weight:700}}.note,blockquote{{border-left:3px solid #b6a1fa;padding-left:15px;margin:20px 0}}.pill{{display:inline-block;background:#302846;border-radius:20px;padding:3px 12px}}table{{width:100%;border-collapse:collapse;font-size:14px;overflow-wrap:anywhere}}th,td{{text-align:left;padding:10px 6px;border-bottom:1px solid #393248}}.table-wrap{{overflow-x:auto}}figure{{margin:20px 0}}figcaption{{color:#c0b7d5;font-size:14px}}svg{{width:100%;height:auto}}li{{margin:8px 0}}a{{color:inherit}}@media(min-width:600px){{body{{padding:36px}}}}

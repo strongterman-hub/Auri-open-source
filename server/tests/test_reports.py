@@ -210,7 +210,13 @@ def test_routes_are_owner_scoped_and_old_clients_unsupported(container):
     assert json.loads(asyncio.run(HealthReportTool(container.weekly_report_service.store, users[1].id).execute(row['id'])))['error']
 
 
-def test_sleep_defers_delivery_and_fixed_id_survives_retry(container):
+def test_sleep_defers_delivery_and_fixed_id_survives_retry(container, monkeypatch):
+    import app.reports.service as module
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 5, 6, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(module, 'datetime', Clock)
     user = container.auth_store.create_user('delivery@example.com', 'hash')
     srv = container.weekly_report_service
     row = srv.store.queue(user.id, str(START), str(END), 'Asia/Shanghai')
@@ -471,3 +477,92 @@ def test_repaired_period_preserves_original_message_id_and_refresh(container):
     refreshed=store.queue('u','2026-10-09','2026-10-15','Asia/Shanghai',refresh=True)
     assert refreshed['id']==row['id'] and refreshed['status']=='queued' and refreshed['html']=='<p>缓存</p>'
     assert len(store.list('u'))==1 and store.get('other',row['id']) is None
+
+
+def test_insight_distribution_preserves_zero_and_does_not_fill_missing_days():
+    from app.reports.insights import add_insight_candidates
+    days=[str(START+timedelta(days=i)) for i in range(7)]
+    def evidence(values):
+        return {'facts':{},'series':{'STEPS':{'label':'步数','unit':'步','days':days,'values':values}},'coverage':{}}
+    e=add_insight_candidates(evidence([0,2000,2500,3000,3500,9000,12000]))
+    assert e['facts']['insight.STEPS.lowest_day']==days[0]
+    assert e['facts']['insight.STEPS.top_pair_share']=='65.6%'
+    assert any(c['id']=='insight.STEPS.distribution' for c in e['insight_candidates'])
+    partial=add_insight_candidates(evidence([None,2000,2500,3000,3500,9000,12000]))
+    assert partial['facts']['insight.STEPS.lowest_day']==days[1]
+    assert 'insight.STEPS.top_pair_share' not in partial['facts']
+    sparse=add_insight_candidates(evidence([None,None,None,None,0,9000,12000]))
+    assert sparse['insight_candidates']==[]
+
+
+def test_insight_segments_use_calendar_blocks_not_selected_extremes():
+    from app.reports.insights import add_insight_candidates
+    days=[str(START+timedelta(days=i)) for i in range(7)]
+    e={'facts':{},'series':{'STEPS':{'unit':'步','days':days,'values':[2000,2000,2000,9999,6000,6000,6000]}},'coverage':{}}
+    add_insight_candidates(e)
+    assert e['facts']['insight.STEPS.early_avg']=='2000步'
+    assert e['facts']['insight.STEPS.late_avg']=='6000步'
+    e['series']['STEPS']['values'][0]=None;e['facts']={}
+    add_insight_candidates(e)
+    assert all(c['id']!='insight.STEPS.segments' for c in e['insight_candidates'])
+
+
+def test_insight_bedtime_range_handles_midnight_and_requires_coverage():
+    from app.reports.insights import add_insight_candidates
+    days=[str(START+timedelta(days=i)) for i in range(7)]
+    facts={'MAIN_SLEEP.days':'5/7天',**{'BEDTIME.'+d:t for d,t in zip(days,['23:30','00:15','01:30','00:00','23:50'])}}
+    e=add_insight_candidates({'facts':facts,'series':{},'coverage':{}})
+    assert e['facts']['insight.bedtime.span']=='120分钟'
+    assert e['facts']['insight.bedtime.earliest_day']==days[0]
+    assert e['facts']['insight.bedtime.latest_day']==days[2]
+    assert e['insight_candidates'][0]['id']=='bedtime.range'
+    small={'facts':{'MAIN_SLEEP.days':'2/7天','BEDTIME.'+days[0]:'23:30','BEDTIME.'+days[1]:'04:00'},'series':{},'coverage':{}}
+    assert add_insight_candidates(small)['insight_candidates']==[]
+
+
+def test_content_review_feedback_rewrites_statistical_listing_with_bounded_calls(container):
+    srv=container.weekly_report_service;add_steps(container,'u')
+    class ReviewModel(Model):
+        def __init__(self):super().__init__();self.reviews=0;self.drafts=[]
+        async def complete_structured(self,messages,max_tokens=8192):
+            if '事实审查员' in messages[0]['content']:
+                self.reviews+=1
+                assert '有用性检查' in messages[0]['content']
+                valid=self.reviews>1
+                return SimpleNamespace(finish_reason='stop',content=json.dumps({'valid':valid,'reason':'只有均值清单，缺少解释和对应行动' if not valid else '通过'},ensure_ascii=False))
+            self.drafts.append(messages[:])
+            assert json.loads(messages[1]['content'])['insight_candidates']
+            return SimpleNamespace(finish_reason='stop',content=json.dumps(output(),ensure_ascii=False))
+    model=ReviewModel();srv.llm=model
+    row=srv.store.queue('u',str(START),str(END),'Asia/Shanghai')
+    asyncio.run(srv.generate(row))
+    assert model.reviews==2 and len(model.drafts)==2 and srv.store.get('u',row['id'])['status']=='ready'
+    assert '只有均值清单' in json.dumps(model.drafts[1],ensure_ascii=False)
+
+
+def test_explicit_refresh_upgrades_legacy_content_once_then_reuses_unchanged_evidence(container):
+    srv=container.weekly_report_service;add_steps(container,'u');model=Model();srv.llm=model
+    e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai');e['owner_notes']=[]
+    legacy=json.loads(json.dumps(e));legacy.pop('insight_candidates');legacy.pop('report_content_version')
+    legacy['facts']={k:v for k,v in legacy['facts'].items() if not k.startswith('insight.')}
+    row=srv.store.queue('u',str(START),str(END),'Asia/Shanghai');srv.store.claim(row['id']);srv.store.complete(row['id'],'旧摘要','旧正文',legacy)
+    refreshed=srv.store.queue('u',str(START),str(END),'Asia/Shanghai',refresh=True)
+    asyncio.run(srv.generate(refreshed))
+    assert model.calls==2 and srv.store.get('u',row['id'])['revision']==2
+    refreshed=srv.store.queue('u',str(START),str(END),'Asia/Shanghai',refresh=True)
+    asyncio.run(srv.generate(refreshed))
+    assert model.calls==2 and srv.store.get('u',row['id'])['revision']==2
+
+
+def test_sparse_report_can_be_brief_without_padding(container):
+    add_steps(container,'sparse',current=1,previous=0)
+    e=collect_facts(container.health_service,'sparse',START,END,'Asia/Shanghai')
+    value={'summary':'这期只看到局部活动记录，还不足以判断日常节奏，可以先从回看那天的安排开始。','html':'<section class="card"><h2>先看清记录对应的那一天</h2><p>记录覆盖 {{fact:STEPS.days}}，记录日均值为 {{fact:STEPS.avg}}。这只能描述该日设备记录的活动量，不能据此判断日常活动是否减少，也不能当作这一周的生活状态。如果你想了解活动是否均匀，可以下次留意普通工作日与休息日的差别，等有连续记录后再一起比较，而不必根据这次局部数值设定新的运动目标。</p>{{chart:STEPS:bar}}</section>'}
+    assert len(value['html'])<400
+    assert render_output(value,e)[0]==value['summary']
+
+
+def test_numeric_identity_summary_is_rejected_even_with_valid_fact_keys(container):
+    add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    value=output();value['summary']='本期活动的记录日均 {{fact:STEPS.avg}} 为 {{fact:STEPS.avg}}，可以看看日常活动情况。'
+    with pytest.raises(ValueError,match='repeated_fact_statement'):render_output(value,e)

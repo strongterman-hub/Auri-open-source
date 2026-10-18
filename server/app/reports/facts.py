@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from zoneinfo import ZoneInfo
+from app.reports.insights import add_insight_candidates
 
 
 METRICS = {
@@ -122,5 +123,5 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
             add(key, label, "分", [rows.get(d) for d in days], [rows.get(d) for d in old_days], comparable=len(versions) == 1)
 
     facts["data.updated_at"] = updated_time([*metrics, *samples], zone)
-    return {"facts": facts, "series": series, "coverage": details,
-            "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比前期升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]}
+    return add_insight_candidates({"facts": facts, "series": series, "coverage": details,
+            "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比前期升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]})
