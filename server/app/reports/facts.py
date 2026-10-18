@@ -59,7 +59,7 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
     days = [(start + timedelta(days=i)).isoformat() for i in range(7)]
     old_days = [(previous + timedelta(days=i)).isoformat() for i in range(7)]
     facts = {"period.start": start.isoformat(), "period.end": end.isoformat(), "period.timezone": timezone_name}
-    facts.update({f'DAY.{day}': day for day in days})
+    facts.update({f'DAY.{day}': day for day in [*old_days, *days]})
     series, details, previous_series = {}, {}, {}
 
     def add(key, label, unit, values, old_values, *, comparable=True):

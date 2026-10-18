@@ -94,11 +94,16 @@ def test_deepseek_structured_toggle_and_finish_diagnostics(monkeypatch):
     answer = asyncio.run(client.complete_structured([], max_tokens=512))
     assert sent[-1]["thinking"] == {"type": "disabled"}
     assert answer.finish_reason == "stop"
+    asyncio.run(client.complete_report([], max_tokens=12288))
+    assert sent[-1]['thinking'] == {'type': 'enabled'}
+    assert sent[-1]['reasoning_effort'] == 'high' and sent[-1]['max_tokens'] == 12288
     asyncio.run(client.complete([]))
     assert "thinking" not in sent[-1]
     client.model = "other-provider-model"
     asyncio.run(client.complete_structured([]))
     assert "thinking" not in sent[-1]
+    asyncio.run(client.complete_report([]))
+    assert 'thinking' not in sent[-1] and 'reasoning_effort' not in sent[-1]
 
 
 def test_jobs_restart_priority_lease_and_delete(tmp_path):

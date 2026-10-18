@@ -92,6 +92,11 @@ def render_output(value, evidence):
         return chart(series[metric], form or "bar")
     # Reject invented numeric measurements in prose/tables; all values use facts.
     format_errors = []
+    for kind, key in TOKEN.findall(value['summary'] + raw):
+        if kind == 'fact' and key not in facts:
+            format_errors.append('unknown_fact:' + key)
+        elif kind == 'chart' and key.split(':')[0] not in series:
+            format_errors.append('unknown_chart')
     for field, text in (("summary", value["summary"]), ("html", raw)):
         if re.search(r'(\{\{fact:[A-Za-z0-9_.:-]+\}\})\s*(?:为|是|的)\s*\1', text):
             format_errors.append("repeated_fact_statement:" + field)

@@ -35,6 +35,15 @@ REVIEW_PROMPT = '''你是健康报告事实审查员，同时做有用性检查�
 摘要表达重点，不只是数字清单。稀疏资料可以短且只作局部解释；不要求凑结构、相反证据或数量。仅因实质事实/安全错误，或明显没有综合解释、只有罗列与泛泛建议而拒绝，不因风格或章节名拒绝。拒绝时只列确实存在的关键问题，引用出错原句与对应证据，不把草稿没说过的话归给草稿。'''
 
 
+class ReportWriter:
+    def __init__(self, llm):
+        self.llm = llm
+
+    async def complete_structured(self, messages, *, max_tokens=12288):
+        write = getattr(self.llm, 'complete_report', self.llm.complete_structured)
+        return await write(messages, max_tokens=max_tokens)
+
+
 class WeeklyReportService:
     def __init__(self, *, store, health, llm, timezone_resolver, sessions, engine, xiaomi, credential_store, settings, auth_store, pending_chat):
         self.store, self.health, self.llm = store, health, llm
@@ -143,7 +152,7 @@ class WeeklyReportService:
                 return False
         with token_context('weekly_health_report', user_id=row['user_id']):
             for review_attempt in range(2):
-                draft = await asyncio.wait_for(structured_json(self.llm, messages, max_tokens=8192, validate=validate), timeout=240)
+                draft = await asyncio.wait_for(structured_json(ReportWriter(self.llm), messages, max_tokens=12288, validate=validate), timeout=240)
                 review = await asyncio.wait_for(structured_json(self.llm, [
                     {'role': 'system', 'content': REVIEW_PROMPT},
                     {'role': 'user', 'content': json.dumps({'draft': draft, 'evidence': model_evidence}, ensure_ascii=False)}

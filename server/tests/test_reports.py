@@ -686,3 +686,31 @@ def test_format_feedback_reports_both_summary_and_body_errors_in_one_attempt(con
     with pytest.raises(ValueError) as error:render_output(value,e)
     assert 'unreferenced_number:summary' in str(error.value)
     assert 'repeated_fact_statement:html' in str(error.value)
+
+
+def test_report_writer_uses_analysis_call_without_changing_review_client(container):
+    add_steps(container,'u');srv=container.weekly_report_service
+    class AnalysisModel(Model):
+        def __init__(self):super().__init__();self.writes=0
+        async def complete_report(self,messages,*,max_tokens):
+            self.writes+=1
+            assert max_tokens==12288 and '事实审查员' not in messages[0]['content']
+            return SimpleNamespace(finish_reason='stop',content=json.dumps(output(),ensure_ascii=False))
+    model=AnalysisModel();srv.llm=model
+    row=srv.store.queue('u',str(START),str(END),'Asia/Shanghai')
+    asyncio.run(srv.generate(row))
+    assert model.writes==1 and model.calls==1 and srv.store.get('u',row['id'])['status']=='ready'
+
+
+def test_previous_comparison_dates_can_be_cited_as_dates(container):
+    add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    assert e['facts']['DAY.2026-09-21']=='2026-09-21'
+    value=output();value['html']+='<p>前一个七日区间从 {{fact:DAY.2026-09-21}} 开始。</p>'
+    assert '2026-09-21' in render_output(value,e)[1]
+
+
+def test_format_feedback_includes_unknown_keys_with_other_errors(container):
+    add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    value=output();value['summary']='该日有123步记录，值得回看。';value['html']+='{{fact:not_available}}'
+    with pytest.raises(ValueError) as error:render_output(value,e)
+    assert 'unknown_fact:not_available' in str(error.value) and 'unreferenced_number:summary' in str(error.value)

@@ -117,8 +117,12 @@ class OpenAICompatibleClient(LLMClient):
     async def complete_structured(self, messages, *, max_tokens=4096):
         return await self._complete(messages, None, max_tokens, structured=True)
 
+    async def complete_report(self, messages, *, max_tokens=12288):
+        """Weekly interpretation needs reasoning; lightweight JSON helpers stay fast."""
+        return await self._complete(messages, None, max_tokens, structured=True, report_reasoning=True)
+
     async def _complete(
-        self, messages, tools=None, max_tokens=None, model=None, structured=False
+        self, messages, tools=None, max_tokens=None, model=None, structured=False, report_reasoning=False
     ):
         if self.usage_guard is not None:
             self.usage_guard()
@@ -135,13 +139,15 @@ class OpenAICompatibleClient(LLMClient):
         # DeepSeek's documented toggle prevents auxiliary JSON calls spending
         # their entire output budget on reasoning. Other providers stay neutral.
         if structured and effective_model.startswith("deepseek-"):
-            payload["thinking"] = {"type": "disabled"}
+            payload["thinking"] = {"type": "enabled" if report_reasoning else "disabled"}
+            if report_reasoning:
+                payload['reasoning_effort'] = 'high'
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=120 if report_reasoning else self.timeout_seconds) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
