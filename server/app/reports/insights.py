@@ -1,5 +1,6 @@
 """Descriptive candidates, not diagnoses: every derived value is a fact key."""
 from statistics import mean
+from app.reports.body_state import add_body_state_evidence
 
 
 def add_insight_candidates(evidence):
@@ -71,5 +72,4 @@ def add_insight_candidates(evidence):
                       '若作息分散让自己不舒服，可先试着让睡前收尾更接近日常时段，观察醒来感受；不推定熬夜原因。')
 
     evidence['insight_candidates'] = candidates
-    evidence['report_content_version'] = 2
-    return evidence
+    return add_body_state_evidence(evidence)

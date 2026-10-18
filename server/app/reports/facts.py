@@ -60,7 +60,7 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
     old_days = [(previous + timedelta(days=i)).isoformat() for i in range(7)]
     facts = {"period.start": start.isoformat(), "period.end": end.isoformat(), "period.timezone": timezone_name}
     facts.update({f'DAY.{day}': day for day in days})
-    series, details = {}, {}
+    series, details, previous_series = {}, {}, {}
 
     def add(key, label, unit, values, old_values, *, comparable=True):
         valid = [v for v in values if v is not None]
@@ -68,6 +68,8 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
         if not valid:
             return
         series[key] = {"label": label, "unit": unit, "days": days, "values": values}
+        if key in {'STEPS', 'MAIN_SLEEP', 'RESTING_HEART_RATE'}:
+            previous_series[key] = {"unit": unit, "days": old_days, "values": old_values}
         details[key] = {"label": label, "unit": unit, "valid_days": len(valid), "previous_valid_days": len(prior)}
         facts.update({f"{key}.days": f"{len(valid)}/7天", f"{key}.avg": display(mean(valid), unit),
                       f"{key}.min": display(min(valid), unit), f"{key}.max": display(max(valid), unit)})
@@ -123,5 +125,5 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
             add(key, label, "分", [rows.get(d) for d in days], [rows.get(d) for d in old_days], comparable=len(versions) == 1)
 
     facts["data.updated_at"] = updated_time([*metrics, *samples], zone)
-    return add_insight_candidates({"facts": facts, "series": series, "coverage": details,
+    return add_insight_candidates({"facts": facts, "series": series, "previous_series": previous_series, "coverage": details,
             "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比前期升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]})

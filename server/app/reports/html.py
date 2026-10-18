@@ -91,12 +91,21 @@ def render_output(value, evidence):
             raise ValueError("unknown_chart")
         return chart(series[metric], form or "bar")
     # Reject invented numeric measurements in prose/tables; all values use facts.
-    for text in (value["summary"], raw):
-        if re.search(r'(\{\{fact:[A-Za-z0-9_.:-]+\}\})\s*(?:为|是)\s*\1', text):
-            raise ValueError("repeated_fact_statement")
+    format_errors = []
+    for field, text in (("summary", value["summary"]), ("html", raw)):
+        if re.search(r'(\{\{fact:[A-Za-z0-9_.:-]+\}\})\s*(?:为|是|的)\s*\1', text):
+            format_errors.append("repeated_fact_statement:" + field)
+        for key in re.findall(r'(?:少了|减少了|缩短了|降低了|下降了)\s*\{\{fact:([A-Za-z0-9_.:-]+)\}\}', text):
+            if str(facts.get(key, '')).startswith('-'):
+                format_errors.append('signed_delta_direction:' + field)
+        measurement = '|'.join(re.escape(key) for key in series)
+        if measurement and re.search(r'\{\{fact:(?:'+measurement+r')\.\d{4}-\d{2}-\d{2}\}\}\s*的\s*\{\{fact:', text):
+            format_errors.append('measurement_used_as_date:' + field)
         stripped = re.sub(r"<[^>]+>", "", TOKEN.sub("", text))
-        if re.search(r"[0-9]", html.unescape(stripped)):
-            raise ValueError("unreferenced_number")
+        if re.search(r"[0-9]|[一二两三四五六七八九十百千万]+(?:到[一二两三四五六七八九十百千万]+)?(?:分钟|小时|次/分)|[一二两三四五六七八九十]+[百千万][一二两三四五六七八九十百千万]*步", html.unescape(stripped)):
+            format_errors.append("unreferenced_number:" + field)
+    if format_errors:
+        raise ValueError('; '.join(dict.fromkeys(format_errors)))
     summary = TOKEN.sub(replace, value["summary"]).strip()
     if "<" in summary or "{{" in summary or not 10 <= len(summary) <= 80:
         raise ValueError("summary_length_or_markup")
@@ -105,6 +114,13 @@ def render_output(value, evidence):
         raise ValueError("missing_chart")
     if not re.search(r"\{\{fact:", safe):
         raise ValueError("no_evidence")
+    if evidence.get('body_state_evidence', {}).get('synthesis_ready'):
+        cited = {key for kind, key in TOKEN.findall(safe) if kind == 'fact'}
+        domains = {metric for metric in ('MAIN_SLEEP', 'STEPS', 'RESTING_HEART_RATE')
+                   if any(key.startswith(metric+'.') or (key.startswith('body.') and '.'+metric+'.' in key)
+                          for key in cited)}
+        if len(domains) < 2:
+            raise ValueError('missing_cross_domain_evidence')
     if len(re.sub(r"<[^>]+>|\{\{[^}]+\}\}", "", safe)) < (90 if sparse else 250):
         raise ValueError("insufficient_report_content")
     body = TOKEN.sub(replace, safe)

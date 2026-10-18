@@ -562,7 +562,127 @@ def test_sparse_report_can_be_brief_without_padding(container):
     assert render_output(value,e)[0]==value['summary']
 
 
-def test_numeric_identity_summary_is_rejected_even_with_valid_fact_keys(container):
+@pytest.mark.parametrize('joiner',['为','的'])
+def test_numeric_identity_summary_is_rejected_even_with_valid_fact_keys(container, joiner):
     add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
-    value=output();value['summary']='本期活动的记录日均 {{fact:STEPS.avg}} 为 {{fact:STEPS.avg}}，可以看看日常活动情况。'
+    value=output();value['summary']='本期活动的记录日均 {{fact:STEPS.avg}} '+joiner+' {{fact:STEPS.avg}}，可以看看日常活动情况。'
     with pytest.raises(ValueError,match='repeated_fact_statement'):render_output(value,e)
+
+
+def body_evidence(values, previous=None):
+    from app.reports.body_state import add_body_state_evidence
+    units={'STEPS':'步','MAIN_SLEEP':'分钟','RESTING_HEART_RATE':'次/分','HEART_RATE':'次/分','RECOVERY_SCORE':'分'}
+    days=[str(START+timedelta(days=i)) for i in range(7)]
+    series={key:{'days':days,'values':rows,'unit':units[key]} for key,rows in values.items()}
+    facts={f'DAY.{day}':day for day in days}
+    facts.update({key+'.'+d:str(v) for key,rows in values.items() for d,v in zip(days,rows) if v is not None})
+    prior={key:{'days':[str(START-timedelta(days=7-i)) for i in range(7)],'values':rows,'unit':units[key]}
+           for key,rows in (previous or {}).items()}
+    return add_body_state_evidence({'facts':facts,'series':series,'previous_series':prior})
+
+
+def test_body_synthesis_uses_shared_calendar_dates_and_keeps_conflicting_directions():
+    e=body_evidence({'STEPS':[6000,8000,1000,6000,6000,12000,4000],
+                     'MAIN_SLEEP':[560,450,None,500,440,450,460],
+                     'RESTING_HEART_RATE':[76,70,69,74,65,69,None]})
+    c=e['body_state_evidence']['comparisons'][0]
+    assert c['before_dates']==['2026-09-28','2026-09-29']
+    assert c['after_dates']==['2026-10-02','2026-10-03']
+    assert e['facts']['body.within_week.STEPS.before']=='7000步'
+    assert e['facts']['body.within_week.STEPS.after']=='9000步'
+    assert e['facts']['body.within_week.MAIN_SLEEP.change']=='-60分钟'
+    assert e['facts']['body.within_week.RESTING_HEART_RATE.change']=='-6次/分'
+    assert [m['direction'] for m in c['metrics']]==['down','up','down']
+    assert e['facts'][c['before_days_key']]=='2天'
+    assert len(c['metrics'])==3 and e['report_content_version']==3
+    # The packet describes evidence; it never assigns a diagnostic state or score.
+    assert 'state' not in c and 'score' not in c
+
+
+def test_body_synthesis_never_substitutes_recorded_hr_or_scores_for_resting_hr():
+    e=body_evidence({'STEPS':[4000]*7,'MAIN_SLEEP':[480]*7,'HEART_RATE':[90]*7,'RECOVERY_SCORE':[95]*7})
+    c=e['body_state_evidence']['comparisons'][0]
+    assert {m['metric'] for m in c['metrics']}=={'STEPS','MAIN_SLEEP'}
+    only_score=body_evidence({'STEPS':[4000]*7,'RECOVERY_SCORE':[95]*7,'HEART_RATE':[90]*7})
+    assert not only_score['body_state_evidence']['synthesis_ready']
+
+
+def test_body_comparison_requires_overlap_without_filling_missing_or_zero():
+    e=body_evidence({'STEPS':[0,2000,None,None,None,7000,9000],
+                     'MAIN_SLEEP':[None,None,480,470,460,450,440]})
+    assert not e['body_state_evidence']['synthesis_ready']
+    e=body_evidence({'STEPS':[0,2000,None,None,5000,7000,9000],
+                     'MAIN_SLEEP':[480,470,None,None,460,450,440]})
+    assert e['facts']['body.within_week.STEPS.before']=='1000步'
+    assert e['facts']['body.within_week.STEPS.after']=='7000步'
+
+
+def test_body_prior_comparison_requires_five_joint_dates_and_preserves_period():
+    current={'STEPS':[6000]*7,'MAIN_SLEEP':[450]*7,'RESTING_HEART_RATE':[72]*7}
+    prior={'STEPS':[4000]*7,'MAIN_SLEEP':[480]*7,'RESTING_HEART_RATE':[65]*5+[None,None]}
+    e=body_evidence(current,prior)
+    c=next(c for c in e['body_state_evidence']['comparisons'] if c['id']=='previous_week')
+    assert c['before_dates']==['2026-09-21','2026-09-22','2026-09-23','2026-09-24','2026-09-25']
+    assert e['facts']['body.previous_week.RESTING_HEART_RATE.change']=='7次/分'
+    assert e['facts'][c['before_days_key']]=='5天'
+    # Fewer resting days use sleep/activity only, without faking a physiological trend.
+    prior['RESTING_HEART_RATE'][4]=None
+    e=body_evidence(current,prior)
+    c=next(c for c in e['body_state_evidence']['comparisons'] if c['id']=='previous_week')
+    assert {m['metric'] for m in c['metrics']}=={'MAIN_SLEEP','STEPS'}
+
+
+def test_body_daily_alignment_keeps_previous_activity_separate_from_wake_day():
+    e=body_evidence({'STEPS':[1000,2000,3000,4000,5000,6000,7000],'MAIN_SLEEP':[480]*7})
+    c=e['body_state_evidence']['daily_context'][1]
+    assert c['day_key']=='DAY.2026-09-29'
+    assert c['same_day']['MAIN_SLEEP']=='MAIN_SLEEP.2026-09-29'
+    assert c['same_day']['STEPS']=='STEPS.2026-09-29'
+    assert c['preceding_day_activity_key']=='STEPS.2026-09-28'
+    assert 'preceding_day_activity_key' not in e['body_state_evidence']['daily_context'][0]
+
+
+def test_collect_exposes_previous_core_series_and_cross_domain_render_guard(container):
+    add_steps(container,'u')
+    rows=[HealthMetricIn(metric_type='RESTING_HEART_RATE',day=str(START-timedelta(days=7)+timedelta(days=i)),value1=65+i/2) for i in range(14)]
+    container.health_service.sync('u',HealthSyncRequest(from_day=str(START-timedelta(days=7)),to_day=str(END),metrics=rows,metric_types=['RESTING_HEART_RATE']))
+    e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    assert e['previous_series']['RESTING_HEART_RATE']['values'][0]==65
+    assert e['body_state_evidence']['synthesis_ready']
+    with pytest.raises(ValueError,match='missing_cross_domain_evidence'):render_output(output(),e)
+    value=output();value['html']+='<p>活动增加时，静息读数也从 {{fact:body.previous_week.RESTING_HEART_RATE.before}} 到 {{fact:body.previous_week.RESTING_HEART_RATE.after}}。</p>'
+    assert render_output(value,e)[1]
+
+
+def test_generation_context_focuses_joint_evidence_without_truncating_saved_snapshot():
+    from app.reports.body_state import generation_context
+    e=body_evidence({'STEPS':[5000]*7,'MAIN_SLEEP':[480]*7,'RESTING_HEART_RATE':[65]*7})
+    e['facts'].update({'STEPS.avg':'5000步','STEPS.days':'7/7天','SPO2.avg':'96%','BEDTIME.2026-09-28':'23:00'})
+    e['insight_candidates']=[{'id':'distribution'}];e['owner_notes']=[{'text':'合成背景'}]
+    view=generation_context(e)
+    assert 'STEPS.avg' not in view['facts'] and 'SPO2.avg' not in view['facts']
+    assert 'body.within_week.STEPS.before' in view['facts'] and 'STEPS.days' in view['facts']
+    assert 'BEDTIME.2026-09-28' in view['facts'] and view['owner_notes']==e['owner_notes']
+    assert 'insight_candidates' not in view and 'STEPS.avg' in e['facts']
+    sparse=body_evidence({'STEPS':[5000]*7})
+    assert generation_context(sparse) is sparse
+
+
+@pytest.mark.parametrize('text,error',[
+    ('<p>每天增加十五分钟步行。</p>','unreferenced_number'),
+    ('<p>睡眠少了 {{fact:MAIN_SLEEP.delta}}。</p>','signed_delta_direction'),
+    ('<p>从 {{fact:STEPS.2026-09-28}} 的 {{fact:STEPS.min}} 开始。</p>','measurement_used_as_date')])
+def test_semantic_numeric_errors_are_rejected(container,text,error):
+    add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    e['facts']['MAIN_SLEEP.delta']='-30分钟'
+    value=output();value['html']+=text
+    with pytest.raises(ValueError,match=error):render_output(value,e)
+
+
+def test_format_feedback_reports_both_summary_and_body_errors_in_one_attempt(container):
+    add_steps(container,'u');e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
+    value=output();value['summary']='步数一共达到12345步，需要关注。'
+    value['html']+='<p>{{fact:STEPS.avg}} 为 {{fact:STEPS.avg}}</p>'
+    with pytest.raises(ValueError) as error:render_output(value,e)
+    assert 'unreferenced_number:summary' in str(error.value)
+    assert 'repeated_fact_statement:html' in str(error.value)
