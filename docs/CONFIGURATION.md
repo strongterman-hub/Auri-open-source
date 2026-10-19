@@ -82,6 +82,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## 搜索、天气、提醒
 
+- 位置情境：`AURI_LOCATION_PLACE_RESOLVER_ENABLED` 默认 true；自部署时将 `AURI_LOCATION_PLACE_RESOLVER_USER_AGENT` 配置为实例的有效联系信息。GPS 默认 15 分钟为近期、两小时内为最后已知记录；`AURI_CHAT_LOCATION_FRESH_SECONDS=240` 仅控制在线聊天尝试刷新定位的时机。行为与时效边界见[位置情境说明](LOCATION_SITUATION.md)。
 - 搜索：`AURI_WEB_SEARCH_PROVIDER=none|openwebsearch|duckduckgo|tavily`。openwebsearch 需要单独运行与现有协议匹配的服务；Tavily 需要 `AURI_TAVILY_API_KEY`。
 - 网页读取有网络、大小及解析限制；第三方网页内容不能作为高优先级指令。
 - 天气后台：`AURI_WEATHER_ENABLED`、`AURI_WEATHER_LATITUDE`、`AURI_WEATHER_LONGITUDE`。固定坐标是部署者回退位置，不是用户 GPS。

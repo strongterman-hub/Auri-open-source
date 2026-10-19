@@ -91,6 +91,8 @@ from app.services.event_memory_service import EventMemoryService
 from app.services.health_service import HealthService
 from app.services.memory_service import MemoryService
 from app.services.observation_service import ObservationService
+from app.services.place_resolver import PlaceResolver
+from app.services.current_situation import CurrentSituationService
 from app.services.presence_service import PresenceService
 from app.services.session_service import SessionService
 from app.services.timezone_store import TimezoneResolver, UserTimezoneStore
@@ -297,6 +299,18 @@ def create_container(settings: Settings) -> Container:
         min_temperature_delta=settings.weather_min_temperature_delta,
         min_humidity_delta=settings.weather_min_humidity_delta,
         location_provider=presence_service,
+    )
+    place_resolver = PlaceResolver(
+        enabled=settings.location_place_resolver_enabled,
+        timeout_seconds=settings.location_place_resolver_timeout_seconds,
+        cache_seconds=settings.location_place_resolver_cache_seconds,
+        overpass_url=settings.location_place_resolver_overpass_url,
+        osm_api_url=settings.location_place_resolver_osm_api_url,
+        nominatim_url=settings.location_place_resolver_nominatim_url,
+        user_agent=settings.location_place_resolver_user_agent,
+        persistent_cache_path=(
+            settings.data_dir / "location" / "place_semantic_cache.json"
+        ),
     )
     proactive_store = ProactiveStore(settings.data_dir / "proactive" / "decisions.db")
     proactive_settings_store = ProactiveSettingsStore(
@@ -602,8 +616,9 @@ def create_container(settings: Settings) -> Container:
                 weather_service=weather_service,
                 user_id=scope.user_id,
                 agent_id=scope.agent_id,
-                max_age_seconds=600,
+                max_age_seconds=settings.proactive_context_gps_fresh_seconds,
                 max_points=settings.location_context_max_points,
+                place_resolver=place_resolver,
             ),
         ]
 
@@ -627,6 +642,12 @@ def create_container(settings: Settings) -> Container:
             )
         ]
 
+    current_situation_service = CurrentSituationService(
+        presence_service, place_resolver,
+        fresh_seconds=settings.proactive_context_gps_fresh_seconds,
+        stale_seconds=settings.proactive_context_gps_stale_seconds,
+        refresh_seconds=settings.chat_location_fresh_seconds,
+    )
     agent_service = AgentService(
         schedule_service=schedule_service,
         session_service=session_service,
@@ -642,6 +663,9 @@ def create_container(settings: Settings) -> Container:
             event_memory_service if settings.event_memory_enabled else None
         ),
         persona_service=persona_service,
+        presence_service=presence_service,
+        place_resolver=place_resolver,
+        current_situation_service=current_situation_service,
     )
 
     if settings.jpush_app_key and settings.jpush_master_secret:
@@ -690,6 +714,8 @@ def create_container(settings: Settings) -> Container:
         has_pending_chat=chat_reply_store.has_open,
         sleep_context=sleep_context,
         persona_service=persona_service,
+        place_resolver=place_resolver,
+        current_situation_service=current_situation_service,
     )
 
     chat_reply_service = ChatReplyService(

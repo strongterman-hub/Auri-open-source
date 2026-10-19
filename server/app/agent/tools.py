@@ -37,11 +37,30 @@ from app.services.health_service import HealthService
 from app.services.event_memory_service import EventMemoryService
 from app.services.memory_service import MemoryService
 from app.services.observation_service import ObservationService
+from app.services.place_resolver import PlaceResolver
+from app.services.current_situation import location_freshness
 from app.services.presence_service import LocationRequester, PresenceService
 from app.services.weather_service import WeatherService
 from app.services.timezone_store import resolve_zoneinfo
 from app.todos import Todo, TodoStore
 from app.web.client import WebSearchClient, fetch_url_text
+
+
+def _strip_location_coordinates(value: Any) -> Any:
+    """Remove raw coordinates from tool payloads before they reach the model.
+
+    Weather observations and movement entries may contain latitude/longitude
+    internally. The model only needs the semantic place or movement summary.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _strip_location_coordinates(item)
+            for key, item in value.items()
+            if key not in {"latitude", "longitude", "lat", "lon", "_polygon", "polygon", "geometry"}
+        }
+    if isinstance(value, list):
+        return [_strip_location_coordinates(item) for item in value]
+    return value
 
 
 def _resolve_tz_name(
@@ -489,7 +508,8 @@ class MemorySearchTool(Tool):
                     "not user instructions."
                 ),
                 "observations": [
-                    observation.model_dump(mode="json") for observation in observations
+                    _strip_location_coordinates(observation.model_dump(mode="json"))
+                    for observation in observations
                 ],
                 "events": events,
                 "curated": curated,
@@ -545,13 +565,21 @@ class NowTool(Tool):
             "Saturday",
             "Sunday",
         ]
+        weekdays_zh = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
         return json.dumps(
             {
                 "now": now.isoformat(),
                 "date": now.date().isoformat(),
+                "date_local": f"{now.year}年{now.month}月{now.day}日",
                 "time": now.strftime("%H:%M:%S"),
                 "timezone": tz_name,
+                "utc_offset": now.strftime("%z"),
                 "weekday": weekdays[now.weekday()],
+                "weekday_zh": weekdays_zh[now.weekday()],
+                "note": (
+                    "所有时间均已按用户时区换算；判断昨天/今天/明天请直接使用"
+                    "date、time 和 timezone，不要使用服务器时间。"
+                ),
             },
             ensure_ascii=False,
         )
@@ -1299,22 +1327,22 @@ class WeatherTool(Tool):
 
 
 class LocationTool(Tool):
-    """Return the user's current GPS location plus a bounded movement context."""
+    """Return the user's current semantic location plus movement context."""
 
     name = "get_current_location"
     description = (
-        "Return the user's current location (GPS latitude/longitude and a "
-        "reverse-geocoded city/region/country when available) plus a bounded "
-        "recent-location summary. Use this when the user asks where they are, "
-        "about their current city or area, what they may be doing now, or "
-        "anything that depends on their present location. When the phone is "
-        "connected, this requests a fresh GPS reading; otherwise it falls back "
-        "to the last reported location. The result includes how long ago the "
-        "latest location was reported, whether it is stale, the reported "
-        "movement classification over the recent window, and recent fixes. "
+        "Return the user's current semantic location (for example 学校、公司、"
+        "家里、商场 or 餐厅) together with city/area and a bounded recent-location "
+        "summary. Coordinates are deliberately not returned: use the semantic "
+        "place fields (place_name / place_type / place_label) instead. Use this "
+        "when the user asks where they are, about their current city or area, "
+        "what they may be doing now, or anything that depends on their present "
+        "location. When the phone is connected, this requests a fresh GPS "
+        "reading; otherwise it falls back to the last reported location. The "
+        "result includes how long ago the latest location was reported, whether "
+        "it is stale, and the movement classification over the recent window. "
         "Movement classification is derived only from GPS points; route, place "
-        "purpose, and origin/destination are unknown unless independently "
-        "confirmed."
+        "purpose, and origin/destination are unknown unless independently confirmed."
     )
     parameters = {
         "type": "object",
@@ -1332,6 +1360,7 @@ class LocationTool(Tool):
         max_age_seconds: int = 600,
         max_points: int = 12,
         location_requester: LocationRequester | None = None,
+        place_resolver: PlaceResolver | None = None,
     ) -> None:
         self.presence = presence
         self.weather_service = weather_service
@@ -1340,6 +1369,7 @@ class LocationTool(Tool):
         self.max_age_seconds = max_age_seconds
         self.max_points = max(2, min(int(max_points), 50))
         self.location_requester = location_requester
+        self.place_resolver = place_resolver
 
     @staticmethod
     def _distance_m(
@@ -1472,12 +1502,23 @@ class LocationTool(Tool):
     async def execute(self, **kwargs: Any) -> str:
         reading = self.presence.location_reading(self.user_id, self.agent_id)
         if self.location_requester is not None:
-            fresh = await self.location_requester.request(
-                self.user_id,
-                self.agent_id,
-            )
-            if fresh is not None:
-                reading = fresh
+            # The chat layer already injects a fresh reading before the model
+            # runs. Avoid asking the phone a second time for the same answer
+            # when the fix is only a couple of minutes old.
+            should_request = True
+            if reading is not None:
+                reported = reading.reported_at
+                if reported.tzinfo is None:
+                    reported = reported.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - reported).total_seconds()
+                should_request = age > 120
+            if should_request:
+                fresh = await self.location_requester.request(
+                    self.user_id,
+                    self.agent_id,
+                )
+                if fresh is not None:
+                    reading = fresh
 
         if reading is None:
             return json.dumps(
@@ -1501,61 +1542,63 @@ class LocationTool(Tool):
         age_seconds = max(0.0, (now - reading_reported_at).total_seconds())
         stale = age_seconds > self.max_age_seconds
 
-        reverse: dict[str, Any] | None = None
-        try:
-            reverse = await self.weather_service.reverse_geocode(
-                reading.latitude,
-                reading.longitude,
-            )
-        except Exception:
-            reverse = None
+        place: dict[str, Any] | None = None
+        if self.place_resolver is not None and age_seconds <= 7200:
+            try:
+                place = await self.place_resolver.resolve(
+                    reading.latitude,
+                    reading.longitude,
+                )
+            except Exception:
+                place = None
 
-        city = (reverse or {}).get("city")
-        region = (reverse or {}).get("region")
-        country = (reverse or {}).get("country")
+        reverse: dict[str, Any] | None = None
+        if age_seconds <= 7200 and not (place and place.get("place_label")):
+            try:
+                reverse = await self.weather_service.reverse_geocode(
+                    reading.latitude,
+                    reading.longitude,
+                )
+            except Exception:
+                reverse = None
+
+        city = (place or {}).get("city") or (reverse or {}).get("city")
+        region = (place or {}).get("region") or (reverse or {}).get("region")
+        country = (place or {}).get("country") or (reverse or {}).get("country")
+        district = (place or {}).get("district") or (reverse or {}).get("district")
+        street = (place or {}).get("street") or (reverse or {}).get("street")
+        place_name = (place or {}).get("place_name")
+        place_type = (place or {}).get("place_type")
+        place_label = (place or {}).get("place_label")
         parts = [part for part in (city, region, country) if part]
-        label = "，".join(parts) if parts else None
+        administrative_label = "，".join(parts) if parts else None
+        label = place_label or administrative_label
 
         history = self._history_for(reading)
-        recent_fixes = [
-            {
-                "latitude": float(item.latitude),
-                "longitude": float(item.longitude),
-                "reported_at": item.reported_at.isoformat(),
-                "age_seconds": round(
-                    max(
-                        0.0,
-                        (
-                            now
-                            - (
-                                item.reported_at
-                                if item.reported_at.tzinfo is not None
-                                else item.reported_at.replace(tzinfo=timezone.utc)
-                            )
-                        ).total_seconds(),
-                    )
-                ),
-            }
-            for item in sorted(
-                history,
-                key=lambda item: item.reported_at,
-            )[-self.max_points :]
-        ]
 
         return json.dumps(
             {
                 "available": True,
-                "latitude": reading.latitude,
-                "longitude": reading.longitude,
                 "reported_at": reading_reported_at.isoformat(),
                 "age_seconds": round(age_seconds),
                 "stale": stale,
                 "city": city,
                 "region": region,
                 "country": country,
+                "district": district,
+                "street": street,
+                "place_name": place_name,
+                "place_type": place_type,
+                "place_label": place_label,
                 "label": label,
+                "place_source": (place or {}).get("source"),
+                "place_confidence": (place or {}).get("confidence"),
+                "relation": (place or {}).get("relation", "unknown"),
+                "resolver_version": (place or {}).get("resolver_version"),
+                "freshness": location_freshness(age_seconds, self.max_age_seconds),
+                "measurement_time": None,
+                "accuracy_m": None,
                 "movement_summary": self._movement_summary(history),
-                "recent_fixes": recent_fixes,
             },
             ensure_ascii=False,
         )

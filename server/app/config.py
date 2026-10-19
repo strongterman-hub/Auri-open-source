@@ -353,6 +353,28 @@ class Settings(BaseSettings):
     xiaomi_sync_timeout_seconds: int = 180
     xiaomi_credential_cache: Path | None = None
 
+    # Semantic location and optional recent pacing settings.
+    location_place_resolver_enabled: bool = True
+    location_place_resolver_timeout_seconds: float = 6.0
+    location_place_resolver_cache_seconds: int = 900
+    location_place_resolver_overpass_url: str = (
+        "https://overpass-api.de/api/interpreter"
+    )
+    location_place_resolver_osm_api_url: str = (
+        "https://api.openstreetmap.org/api/0.6/map"
+    )
+    location_place_resolver_nominatim_url: str = (
+        "https://nominatim.openstreetmap.org/reverse"
+    )
+    location_place_resolver_user_agent: str = "Auri/1.0 (contact: contact@example.com)"
+    chat_location_fresh_seconds: int = 240
+    chat_location_request_timeout_seconds: float = 8.0
+    proactive_pacing_recent_window_days: int = 7
+    proactive_pacing_recent_sample: int = 12
+    proactive_pacing_want_less_factor: float = 0.35
+    proactive_pacing_pause_after_unanswered: int = 3
+    proactive_pacing_unanswered_probe_seconds: int = 14400
+
 
 @lru_cache
 def get_settings() -> Settings:

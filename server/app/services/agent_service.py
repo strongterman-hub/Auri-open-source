@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from app.agent.activity import infer_current_activity
 from app.agent.context_compressor import ContextCompressor
 from app.agent.response_style import infer_response_style
 from app.agent.runner import AgentRunContext, AgentRunner, AgentTurn
@@ -21,7 +22,9 @@ from app.persona.service import PersonaService
 from app.reports.tool import SendHealthReportTool
 from app.services.memory_service import MemoryService
 from app.services.event_memory_service import EventMemoryService
-from app.services.presence_service import LocationRequester
+from app.services.place_resolver import PlaceResolver
+from app.services.current_situation import CurrentSituationService
+from app.services.presence_service import LocationRequester, PresenceService
 from app.services.session_service import SessionService
 from app.services.timezone_store import resolve_zoneinfo
 from app.session.models import Session
@@ -106,6 +109,9 @@ class AgentService:
         event_memory_service: EventMemoryService | None = None,
         persona_service: PersonaService | None = None,
         schedule_service=None,
+        presence_service: PresenceService | None = None,
+        place_resolver: PlaceResolver | None = None,
+        current_situation_service: CurrentSituationService | None = None,
     ) -> None:
         self.session_service = session_service
         self.memory_service = memory_service
@@ -126,6 +132,9 @@ class AgentService:
         self.event_memory_service = event_memory_service
         self.persona_service = persona_service
         self.schedule_service = schedule_service
+        self.presence_service = presence_service
+        self.place_resolver = place_resolver
+        self.current_situation_service = current_situation_service or CurrentSituationService(presence_service, place_resolver)
         self._session_locks: dict[str, asyncio.Lock] = {}
 
     def _lock_for(self, session_id: str) -> asyncio.Lock:
@@ -138,6 +147,139 @@ class AgentService:
             lock = asyncio.Lock()
             self._session_locks[session_id] = lock
         return lock
+
+    def _user_timezone_name(self, user_id: str) -> str:
+        timezone_name = "Asia/Shanghai"
+        if self.timezone_resolver is not None:
+            timezone_name = self.timezone_resolver(user_id) or timezone_name
+        return timezone_name
+
+    def _localized_history(
+        self,
+        history: list[dict],
+        user_id: str,
+    ) -> list[dict]:
+        """Return history copies whose timestamps use the user's timezone.
+
+        Session storage keeps UTC timestamps. The model otherwise reads a UTC
+        date from an after-midnight local message and mixes it together with a
+        local current-time block, which is the main cause of date confusion.
+        """
+        if not history:
+            return history
+        try:
+            zone = resolve_zoneinfo(self._user_timezone_name(user_id))
+        except Exception:
+            zone = resolve_zoneinfo("Asia/Shanghai")
+        localized: list[dict] = []
+        for message in history:
+            raw = message.get("timestamp")
+            if not raw:
+                localized.append(message)
+                continue
+            try:
+                value = datetime.fromisoformat(str(raw))
+                if value.tzinfo is None:
+                    value = value.replace(tzinfo=timezone.utc)
+                localized.append(
+                    {**message, "timestamp": value.astimezone(zone).isoformat()}
+                )
+            except (TypeError, ValueError):
+                localized.append(message)
+        return localized
+
+    @staticmethod
+    def _format_age(age_seconds: float) -> str:
+        if age_seconds < 60:
+            return "刚刚"
+        if age_seconds < 3600:
+            return f"{int(age_seconds // 60)}分钟前"
+        if age_seconds < 86400:
+            return f"{int(age_seconds // 3600)}小时前"
+        return f"{int(age_seconds // 86400)}天前"
+
+    async def _current_location_text(
+        self, scope: MemoryScope, *, location_requester=None, capture=None, messages=None,
+    ) -> str | None:
+        if self.presence_service is None:
+            return None
+        situation = await self.current_situation_service.build(
+            scope, requester=location_requester, messages=messages,
+        )
+        try:
+            history = self.presence_service.location_history(
+                scope.user_id, scope.agent_id,
+                limit=max(2, int(getattr(self.settings, "location_context_max_points", 12) or 12)),
+            )
+            if len(history) >= 2:
+                situation.movement = LocationTool._movement_summary(history).get("classification")
+        except Exception:
+            pass
+        if capture is not None:
+            capture.update({"situation": situation, "place": situation.place,
+                            "movement_classification": situation.movement,
+                            "age_seconds": situation.age_seconds})
+        return situation.location_text()
+
+    def _active_schedule_event(self, scope: MemoryScope) -> dict | None:
+        if self.schedule_service is None:
+            return None
+        try:
+            timezone_name = self._user_timezone_name(scope.user_id)
+            zone = resolve_zoneinfo(timezone_name)
+            now = datetime.now(zone)
+            result = self.schedule_service.list(
+                scope.user_id,
+                scope.agent_id,
+                now.date(),
+                now.date() + timedelta(days=1),
+                timezone_name,
+            )
+        except Exception:
+            return None
+        for event in result.get("events") or []:
+            if event.get("status") != "scheduled":
+                continue
+            try:
+                starts_at = datetime.fromisoformat(str(event["starts_at"]))
+                ends_at = datetime.fromisoformat(str(event["ends_at"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if starts_at.tzinfo is None:
+                starts_at = starts_at.replace(tzinfo=zone)
+            if ends_at.tzinfo is None:
+                ends_at = ends_at.replace(tzinfo=zone)
+            if starts_at <= now <= ends_at:
+                return event
+        return None
+
+    async def _current_activity_text(
+        self,
+        scope: MemoryScope,
+        capture: dict | None,
+        recent_user_text: str | None = None,
+    ) -> str:
+        capture = capture or {}
+        active_event = self._active_schedule_event(scope)
+        title = str(active_event.get("title") or "").strip() if active_event else None
+        try:
+            local_now = datetime.now(
+                resolve_zoneinfo(self._user_timezone_name(scope.user_id))
+            )
+        except Exception:
+            local_now = datetime.now(timezone.utc)
+        if capture.get("situation") is not None:
+            return capture["situation"].activity_text(
+                recent_user_text=recent_user_text, active_event_title=title or None,
+            )
+        hypothesis = infer_current_activity(
+            place=capture.get("place"),
+            movement=capture.get("movement_classification"),
+            local_now=local_now,
+            active_event_title=title or None,
+            recent_user_text=recent_user_text,
+        )
+        return hypothesis.format()
 
     async def accept_message(
         self,
@@ -362,6 +504,14 @@ class AgentService:
         for message in history:
             resolved = await self._resolve_llm_content(message.get("content"))
             llm_history.append({**message, "content": resolved})
+        llm_history = self._localized_history(llm_history, scope.user_id)
+        location_capture: dict = {}
+        location_text = await self._current_location_text(
+            scope,
+            location_requester=location_requester,
+            capture=location_capture,
+            messages=snapshot_session.messages,
+        )
 
         batch_messages = [
             message
@@ -384,6 +534,11 @@ class AgentService:
         batch_user_text = " ".join(
             self._content_text(message.get("content", ""))
             for message in batch_messages
+        )
+        activity_text = await self._current_activity_text(
+            scope,
+            location_capture,
+            batch_user_text,
         )
         persona_prompt = relationship_prompt = behavior_prompt = ""
         if self.persona_service is not None:
@@ -425,6 +580,9 @@ class AgentService:
                 scope.user_id, scope.agent_id
             ),
             current_time=self._current_time_text(scope.user_id),
+            location_text=location_text,
+            activity_text=activity_text,
+            current_situation=location_capture.get("situation"),
             xiaomi_status_text=self._xiaomi_status_text(scope.user_id),
             response_style=response_style,
             persona_prompt=persona_prompt,
@@ -488,11 +646,9 @@ class AgentService:
             return "\n\n[LIVE SCHEDULE unavailable: do not assume the user has no plans; query schedule tool.]"
 
     def _current_time_text(self, user_id: str) -> str:
-        tz_name = "Asia/Shanghai"
-        if self.timezone_resolver is not None:
-            tz_name = self.timezone_resolver(user_id) or tz_name
+        tz_name = self._user_timezone_name(user_id)
         now = datetime.now(resolve_zoneinfo(tz_name))
-        weekdays = [
+        weekdays_en = [
             "Monday",
             "Tuesday",
             "Wednesday",
@@ -501,7 +657,15 @@ class AgentService:
             "Saturday",
             "Sunday",
         ]
-        return f"{now.isoformat()} ({tz_name}, {weekdays[now.weekday()]})"
+        weekdays_zh = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        offset = now.strftime("%z")
+        return (
+            f"当地日期：{now.date().isoformat()}（{weekdays_zh[now.weekday()]}）；"
+            f"当地时刻：{now.strftime('%H:%M:%S')}；"
+            f"ISO：{now.isoformat()}；时区：{tz_name}（UTC{offset}）；"
+            f"英文星期：{weekdays_en[now.weekday()]}。"
+            "所有历史消息时间均已转换到该时区，请直接使用当地日期判断今天/昨天/明天。"
+        )
 
     def _persona_metadata(self, scope: MemoryScope) -> dict:
         if self.persona_service is None:
@@ -559,6 +723,16 @@ class AgentService:
                 # Event extraction is an auxiliary memory path and must never
                 # prevent the conversational reply from completing.
                 pass
+        if self.proactive_activity_hook is not None:
+            try:
+                await self.proactive_activity_hook(
+                    scope.user_id,
+                    scope.agent_id,
+                    self._content_text(user_message.get("content", "")),
+                    None,
+                )
+            except Exception:
+                pass
 
         snapshot = await self.memory_service.snapshot(scope)
         memory_prompt = self.memory_service.build_system_prompt(snapshot)
@@ -582,6 +756,7 @@ class AgentService:
         for message in history:
             resolved = await self._resolve_llm_content(message.get("content"))
             llm_history.append({**message, "content": resolved})
+        llm_history = self._localized_history(llm_history, scope.user_id)
         return session, scope, memory_prompt, llm_history, summary
 
     async def _attribute_proactive_reply(
@@ -858,6 +1033,17 @@ class AgentService:
             )
             xiaomi_status_text = self._xiaomi_status_text(scope.user_id)
             current_time = self._current_time_text(scope.user_id)
+            location_capture = {}
+            location_text = await self._current_location_text(
+                scope,
+                capture=location_capture,
+                messages=session.messages,
+            )
+            activity_text = await self._current_activity_text(
+                scope,
+                location_capture,
+                content,
+            )
             tools = self.tool_factory(scope)
             persona_metadata = self._persona_metadata(scope)
             persona_prompt = relationship_prompt = behavior_prompt = ""
@@ -891,6 +1077,9 @@ class AgentService:
                 onboarding_actions=onboarding_actions,
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
+                location_text=location_text,
+                activity_text=activity_text,
+            current_situation=location_capture.get("situation"),
                 xiaomi_status_text=xiaomi_status_text,
                 current_message_ids=(
                     [history[-1]["id"]] if history and history[-1].get("id") else []
@@ -959,6 +1148,18 @@ class AgentService:
             )
             xiaomi_status_text = self._xiaomi_status_text(scope.user_id)
             current_time = self._current_time_text(scope.user_id)
+            location_capture = {}
+            location_text = await self._current_location_text(
+                scope,
+                location_requester=location_requester,
+                capture=location_capture,
+                messages=session.messages,
+            )
+            activity_text = await self._current_activity_text(
+                scope,
+                location_capture,
+                content,
+            )
             # Persist the user message plus a "（已停止）" placeholder immediately.
             # On normal completion the placeholder is replaced with the full text;
             # if the client stops, the placeholder stays, so a stopped reply is still
@@ -1005,6 +1206,9 @@ class AgentService:
                 onboarding_actions=onboarding_actions,
                 onboarding_context_text=onboarding_context_text,
                 current_time=current_time,
+                location_text=location_text,
+                activity_text=activity_text,
+            current_situation=location_capture.get("situation"),
                 xiaomi_status_text=xiaomi_status_text,
                 current_message_ids=(
                     [history[-1]["id"]] if history and history[-1].get("id") else []

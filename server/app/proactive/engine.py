@@ -14,7 +14,8 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.agent.llm import LLMClient
-from app.agent.tools import Tool
+from app.agent.activity import infer_current_activity
+from app.agent.tools import LocationTool, Tool
 from app.config import Settings
 from app.core.token_logger import token_context
 from app.memory.intents import IntentStore
@@ -39,6 +40,8 @@ from app.proactive.models import (
     TriggerType,
 )
 from app.proactive.pacing import ProactivePacingStore
+from app.services.place_resolver import PlaceResolver
+from app.services.current_situation import CurrentSituationService, reply_conflicts
 from app.proactive.preferences import PreferenceStore
 from app.proactive.profile import (
     DENSE_SETTLED_TARGET_SLOTS,
@@ -276,6 +279,8 @@ class ProactiveEngine:
         has_pending_chat: Callable[[str, str], bool] | None = None,
         sleep_context: SleepContextController | None = None,
         persona_service: Any = None,
+        place_resolver: PlaceResolver | None = None,
+        current_situation_service: CurrentSituationService | None = None,
     ) -> None:
         self.llm = llm
         self.memory_service = memory_service
@@ -304,6 +309,8 @@ class ProactiveEngine:
         self.has_pending_chat = has_pending_chat
         self.sleep_context = sleep_context
         self.persona_service = persona_service
+        self.place_resolver = place_resolver
+        self.current_situation_service = current_situation_service or CurrentSituationService(presence, place_resolver)
         self._user_locks: dict[str, asyncio.Lock] = {}
         self._dense_evaluating: set[str] = set()
 
@@ -1798,6 +1805,109 @@ class ProactiveEngine:
             return False
         return self._category_used(category, counts) >= limit
 
+    def _base_daily_frequency_limit(self, user_id: str, agent_id: str) -> int:
+        if self._persona_active(user_id, agent_id) and self.persona_service is not None:
+            try:
+                return int(
+                    self.persona_service.daily_limit(
+                        MemoryScope(user_id=user_id, agent_id=agent_id)
+                    )
+                )
+            except Exception:
+                pass
+        return int(self.settings.proactive_daily_message_limit)
+
+    def _recent_sent_decisions(self, user_id: str, agent_id: str):
+        try:
+            window_days = max(
+                1,
+                int(getattr(self.settings, "proactive_pacing_recent_window_days", 7)),
+            )
+            sample = max(
+                1,
+                int(getattr(self.settings, "proactive_pacing_recent_sample", 12)),
+            )
+            return self.store.recent_sent(
+                user_id,
+                agent_id,
+                since=_utcnow() - timedelta(days=window_days),
+                limit=sample,
+            )
+        except Exception:
+            return []
+
+    @staticmethod
+    def _recent_reply_rate(decisions) -> float | None:
+        if not decisions:
+            return None
+        replied = sum(1 for decision in decisions if decision.replied)
+        return replied / float(len(decisions))
+
+    def _recent_engagement_rate(self, user_id: str, agent_id: str, decisions) -> float | None:
+        """Recent reply rate with user activity resolving older sends.
+
+        A message sent before the user's latest message is treated as having
+        reached an active user, even when its own ``replied`` attribution is
+        missing. Without this, one burst of unattributed shares would keep the
+        cooldown pinned at its maximum for the whole sampling window even
+        after the user re-engaged.
+        """
+        if not decisions:
+            return None
+        state = self.pacing_store.get_state(user_id, agent_id) or {}
+        last_activity = self._parse_timestamp(
+            state.get("last_user_activity_at") or state.get("last_reply_at")
+        )
+        if last_activity is None:
+            return self._recent_reply_rate(decisions)
+        engaged = 0
+        for decision in decisions:
+            raw = getattr(decision, "decided_at", None)
+            if decision.replied:
+                engaged += 1
+                continue
+            if isinstance(raw, datetime):
+                decided = raw if raw.tzinfo is not None else raw.replace(tzinfo=timezone.utc)
+            else:
+                decided = self._parse_timestamp(raw)
+            if decided is not None and decided < last_activity:
+                engaged += 1
+        return engaged / float(len(decisions))
+
+    def _recent_consecutive_unanswered(self, user_id: str, agent_id: str) -> int:
+        """Count proactive sends since the user's last activity.
+
+        Any user message resets the burst, even when it is not explicitly
+        attributed to a proactive share. This prevents a stream of shares from
+        continuing while the user is silent.
+        """
+        decisions = self._recent_sent_decisions(user_id, agent_id)
+        if not decisions:
+            return 0
+        state = self.pacing_store.get_state(user_id, agent_id) or {}
+        last_user_activity = self._parse_timestamp(
+            state.get("last_user_activity_at") or state.get("last_reply_at")
+        )
+        count = 0
+        for decision in decisions:
+            raw_decided_at = getattr(decision, "decided_at", None)
+            if isinstance(raw_decided_at, datetime):
+                decided_at = (
+                    raw_decided_at
+                    if raw_decided_at.tzinfo is not None
+                    else raw_decided_at.replace(tzinfo=timezone.utc)
+                )
+            else:
+                decided_at = self._parse_timestamp(raw_decided_at)
+            if decided_at is None:
+                break
+            if last_user_activity is not None and decided_at <= last_user_activity:
+                break
+            if decision.replied:
+                break
+            count += 1
+        return count
+
     def _daily_frequency_limit(self, user_id: str, agent_id: str) -> int:
         if self._persona_active(user_id, agent_id) and self.persona_service is not None:
             try:
@@ -1809,6 +1919,44 @@ class ProactiveEngine:
             except Exception:
                 pass
         return int(self.settings.proactive_daily_message_limit)
+
+    def _should_pause_after_unanswered(self, user_id: str, agent_id: str) -> bool:
+        threshold = int(
+            getattr(self.settings, "proactive_pacing_pause_after_unanswered", 3) or 0
+        )
+        if threshold <= 0:
+            return False
+        state = self.pacing_store.get_state(user_id, agent_id) or {}
+        preference = state.get("initiative_preference")
+        if preference == "want_less":
+            # Someone who explicitly asked for fewer messages should hit the
+            # quiet break one unanswered send earlier.
+            threshold = max(1, threshold - 1)
+        elif preference == "want_more":
+            threshold += 1
+        unanswered = self._recent_consecutive_unanswered(user_id, agent_id)
+        if unanswered < threshold:
+            return False
+        last_sent_at = self._parse_timestamp(state.get("last_sent_at"))
+        base_probe_seconds = float(
+            getattr(self.settings, "proactive_pacing_unanswered_probe_seconds", 14400)
+            or 14400
+        )
+        growth = float(
+            getattr(self.settings, "proactive_pacing_backoff_growth", 2.0) or 2.0
+        )
+        # Grow the quiet window with each unanswered send beyond the threshold,
+        # capped at one day. A user who keeps not replying should experience a
+        # clearly larger penalty than a fixed 12-hour probe.
+        over = max(0, unanswered - threshold)
+        probe_seconds = min(base_probe_seconds * (growth ** over), 86400.0)
+        if last_sent_at is not None and (
+            _utcnow() - last_sent_at
+        ).total_seconds() >= probe_seconds:
+            # Allow one calm probe after the growing silence window; if it is
+            # ignored, last_sent_at advances and the next window is longer.
+            return False
+        return True
 
     def _remaining_category_quotas(
         self,
@@ -1947,6 +2095,23 @@ class ProactiveEngine:
         if not active:
             return None
         return max(active, key=lambda session: session.updated_at)
+
+    async def _last_user_message_text(
+        self,
+        user_id: str,
+        agent_id: str,
+        limit: int = 10,
+    ) -> str:
+        session = await self._latest_active_session_async(user_id, agent_id)
+        if session is None:
+            return ""
+        for message in reversed(session.messages[-limit:]):
+            if message.get("role") != "user":
+                continue
+            text = self._message_text(message.get("content"))
+            if text:
+                return text
+        return ""
 
     async def _recent_conversation_text(
         self,
@@ -2382,10 +2547,9 @@ class ProactiveEngine:
         scope = MemoryScope(user_id=user_id, agent_id=agent_id)
         snapshot = await self.memory_service.snapshot(scope)
         memory_prompt = self.memory_service.build_system_prompt(snapshot)
-        location = self.presence.location(user_id, agent_id)
-        location_text = (
-            f"{location[0]}, {location[1]}" if location is not None else "未知"
-        )
+        current_situation = await self._build_current_situation(scope)
+        semantic_location = current_situation.location_text()
+        activity_hypothesis = current_situation.activity_text()
         completed = self.profile_store.completed_slots(user_id, agent_id)
         filled = {slot for slot in completed if slot in PROFILE_SLOTS}
         delivered = {slot for slot in completed if slot in GUIDE_SLOTS}
@@ -2422,7 +2586,10 @@ class ProactiveEngine:
                     f"Deferred slots (slow phase may revisit): "
                     f"{', '.join(sorted(deferred)) or '无'}\n"
                     f"First contact: {'yes' if first_contact else 'no'}\n"
-                    f"GPS location: {location_text}\n"
+                    f"Semantic location (respect freshness and owner corrections; "
+                    f"never invent one): {semantic_location or '未知'}\n"
+                    f"Current activity hypothesis (inference only; never assert it "
+                    f"as fact):\n{activity_hypothesis}\n"
                     f"Xiaomi status: {self._xiaomi_status_text(scope.user_id)}\n"
                     f"Current conversation:\n{conversation_text}\n"
                     f"Known user info:\n{memory_prompt}"
@@ -2435,7 +2602,10 @@ class ProactiveEngine:
                 tools=None,
                 max_tokens=self.settings.proactive_decision_max_tokens,
             )
-        return self._parse_profile_plan(response.content)
+        plan = self._parse_profile_plan(response.content)
+        if reply_conflicts(str(plan.get("message") or ""), current_situation):
+            plan["message"] = None
+        return plan
 
     @staticmethod
     def _parse_profile_plan(content: str) -> dict[str, Any]:
@@ -2448,6 +2618,58 @@ class ProactiveEngine:
             "slot": slot if isinstance(slot, str) else None,
             "message": message if isinstance(message, str) else None,
         }
+
+    @classmethod
+    def _strip_location_coordinates(cls, value: Any) -> Any:
+        """Remove raw coordinates from observation payloads shown to the model."""
+        if isinstance(value, dict):
+            return {
+                key: cls._strip_location_coordinates(item)
+                for key, item in value.items()
+                if key not in {"latitude", "longitude", "lat", "lon"}
+            }
+        if isinstance(value, list):
+            return [cls._strip_location_coordinates(item) for item in value]
+        return value
+
+    async def _build_current_situation(self, scope, snapshot=None):
+        matching = snapshot is not None and snapshot.user_id == scope.user_id and snapshot.agent_id == scope.agent_id
+        if matching and snapshot.current_situation is not None:
+            return snapshot.current_situation
+        session = await self._latest_active_session_async(scope.user_id, scope.agent_id)
+        situation = await self.current_situation_service.build(
+            scope, messages=session.messages if session is not None else [],
+        )
+        if matching:
+            gps = snapshot.signal("gps_latest")
+            if gps is not None and gps.freshness.value == "fresh":
+                situation.movement = gps.value.get("movement")
+            snapshot.current_situation = situation
+        return situation
+
+    async def _semantic_place(self, scope):
+        return (await self._build_current_situation(scope)).place
+
+    async def _semantic_location_line(self, scope, *, situation=None):
+        situation = situation or await self._build_current_situation(scope)
+        return situation.location_text()
+
+    async def _activity_hypothesis_line(self, scope, situation_snapshot=None, recent_user_text=None, *, situation=None):
+        situation = situation or await self._build_current_situation(scope, situation_snapshot)
+        active_title = None
+        activity = None
+        if situation_snapshot is not None:
+            signal = situation_snapshot.signal("activity_state")
+            if signal is not None and signal.freshness.value == "fresh":
+                activity = dict(signal.value)
+            for signal in situation_snapshot.signals:
+                if signal.source == "schedule" and signal.value.get("active_now"):
+                    active_title = signal.value.get("title")
+                    break
+        return situation.activity_text(
+            recent_user_text=recent_user_text, active_event_title=active_title,
+            snapshot_activity=activity,
+        )
 
     async def _decide(
         self,
@@ -2481,7 +2703,7 @@ class ProactiveEngine:
             observation_lines = [
                 f"- {observation.source.value}/{observation.kind} @ "
                 f"{observation.observed_at.isoformat()}: "
-                f"{json.dumps(observation.payload, ensure_ascii=False)}"
+                f"{json.dumps(self._strip_location_coordinates(observation.payload), ensure_ascii=False)}"
                 for observation in observations
             ]
             conversation_text = await self._recent_conversation_text(
@@ -2555,6 +2777,16 @@ class ProactiveEngine:
                         system_content += "\n\n" + block
             except Exception:
                 pass
+        recent_user_text = await self._last_user_message_text(
+            scope.user_id, scope.agent_id
+        )
+        current_situation = await self._build_current_situation(scope, situation_snapshot)
+        semantic_location = current_situation.location_text()
+        activity_hypothesis = await self._activity_hypothesis_line(
+            scope,
+            situation_snapshot,
+            situation=current_situation,
+        )
         messages = [
             {"role": "system", "content": system_content},
             {
@@ -2562,6 +2794,15 @@ class ProactiveEngine:
                 "content": (
                     f"Current local time (authoritative): {now.isoformat()}\n"
                     f"Trigger: {trigger_text}\n\n"
+                    f"Semantic location (respect freshness and owner corrections): {semantic_location or '（未提供，涉及当前位置时不要猜测）'}\n"
+                    "Location usage: background context only. Do not start the "
+                    "message with a location/status readout, do not repeat where "
+                    "the user is unless the topic directly needs it (nearby "
+                    "places, commute, weather for an unnamed place), and do not "
+                    "use system labels like 住处/居住区 when the user has said "
+                    "在家/在公司.\n\n"
+                    f"Current activity hypothesis (inference only; do not assert "
+                    f"it as fact):\n{activity_hypothesis}\n\n"
                     f"Wake recovery context: {wake_guidance}\n\n"
                     f"Relationship pacing: {pacing_guidance}\n\n"
                     f"Situation snapshot (authoritative for evidence ids and "
@@ -2586,6 +2827,7 @@ class ProactiveEngine:
                 tools=tools,
                 max_tokens=self.settings.proactive_decision_max_tokens,
                 max_rounds=self.settings.proactive_tool_rounds,
+                current_situation=current_situation,
             )
         decision = self._parse_decision(
             content,
@@ -2596,6 +2838,11 @@ class ProactiveEngine:
             ),
         )
         decision["tool_calls"] = tool_calls
+        conflicts = reply_conflicts(str(decision.get("message") or ""), current_situation)
+        conflicts += reply_conflicts(str(decision.get("push_message") or ""), current_situation)
+        if conflicts:
+            decision["should_message"] = False
+            decision["silence_reason"] = "situation_conflict:" + ",".join(sorted(set(conflicts)))
         return decision
 
     async def _complete_decision(
@@ -2605,6 +2852,7 @@ class ProactiveEngine:
         tools: list[Tool],
         max_tokens: int,
         max_rounds: int,
+        current_situation=None,
     ) -> tuple[str, list[dict[str, Any]]]:
         """Run a short tool-calling loop before the proactive decision JSON.
 
@@ -2666,6 +2914,9 @@ class ProactiveEngine:
                     except Exception as exc:  # noqa: BLE001 - tool boundary
                         result = json.dumps({"error": str(exc)}, ensure_ascii=False)
                         status = "error"
+                if tool_call.name == "get_current_location" and current_situation:
+                    current_situation.update_location_result(result)
+                    conversation.append({"role": "user", "content": "Updated situation evidence:\n" + current_situation.location_text() + "\n" + current_situation.owner.format()})
                 tool_audit.append(
                     {
                         "name": tool_call.name,
@@ -2793,8 +3044,18 @@ class ProactiveEngine:
             f"[memory_{entry.id}] {entry.content}"
             for entry in [*memory_snapshot.memory, *memory_snapshot.user]
         ]
+        current_situation = await self._build_current_situation(scope, situation_snapshot)
+        semantic_location = current_situation.location_text()
+        activity_hypothesis = await self._activity_hypothesis_line(
+            scope,
+            situation_snapshot,
+            situation=current_situation,
+        )
         prompt = (
             EVIDENCE_RULES + "\n" + situation_snapshot.context_text() + "\n"
+            f"SEMANTIC_LOCATION (respect freshness and owner corrections): {semantic_location or '未知'}\n"
+            f"CURRENT_ACTIVITY_HYPOTHESIS (inference only; do not assert as fact):\n"
+            f"{activity_hypothesis}\n"
             f"DRAFT_CATEGORY: {decision.category.value if decision.category else 'unknown'}\n"
             f"DRAFT_TOPIC_KEY: {decision.topic_key or decision.insight_key or 'unknown'}\n"
             f"DRAFT_INTENT: {decision.conversation_intent.value}\n"
@@ -2844,10 +3105,16 @@ class ProactiveEngine:
             else []
         )
         if verdict == "safe":
-            return
+            conflicts = reply_conflicts(str(decision.message or ""), current_situation)
+            conflicts += reply_conflicts(str(decision.push_message or ""), current_situation)
+            if not conflicts:
+                return
+            decision.continuity_reason = "situation_conflict:" + ",".join(sorted(set(conflicts)))
         if verdict == "rewrite":
             rewritten = str(data.get("message") or "").strip()
-            if rewritten:
+            conflicts = reply_conflicts(rewritten, current_situation)
+            conflicts += reply_conflicts(str(data.get("push_message") or ""), current_situation)
+            if rewritten and not conflicts:
                 decision.message = rewritten
                 decision.push_message = (
                     str(data.get("push_message") or "").strip() or None

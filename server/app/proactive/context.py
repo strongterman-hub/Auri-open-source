@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.memory.events import EventStatus
 from app.agent.situation import EVIDENCE_RULES, is_correction
+from app.agent.user_state import parse_owner_state
 from app.health.evidence import HEALTH_MEANING, sleep_evidence
 from app.memory.models import MemoryScope
 from app.observation.models import ObservationSource
@@ -89,6 +90,7 @@ class SituationSnapshot(BaseModel):
     interruptibility: Interruptibility = Interruptibility.normal
     interruptibility_reasons: list[str] = Field(default_factory=list)
     interruptibility_evidence: list[str] = Field(default_factory=list)
+    current_situation: Any = Field(default=None, exclude=True)
 
     def evidence_ids(self) -> set[str]:
         return {signal.id for signal in self.signals}
@@ -168,6 +170,7 @@ class SituationSnapshot(BaseModel):
             "interruptibility_reasons": self.interruptibility_reasons,
             "interruptibility_evidence": self.interruptibility_evidence,
             "signals": signal_metadata,
+            "current_situation": self.current_situation.audit_dict() if self.current_situation else None,
         }
 
 
@@ -561,49 +564,19 @@ class ProactiveContextBuilder:
         owner_signals.sort(key=lambda item: item.observed_at or now)
         for signal in reversed(owner_signals[-6:]):
             text = str(signal.value.get("text") or "")
-            if any(term in text for term in ("到了", "到家", "回来了", "回到")):
-                return (
-                    "arrived",
-                    0.80,
-                    "用户近期明确表示已经到达某处",
-                    [signal.id],
-                    signal.observed_at or now,
-                )
-            if any(
-                term in text
-                for term in ("已经出门", "出发了", "在路上", "在去", "去往", "赶去", "通勤")
-            ):
-                return (
-                    "commuting",
-                    0.85,
-                    "用户近期明确表示正在出门或前往某处",
-                    [signal.id],
-                    signal.observed_at or now,
-                )
-            if any(term in text for term in ("运动完", "跑完", "骑完", "练完")):
-                return (
-                    "post_exercise",
-                    0.75,
-                    "用户近期明确表示运动已经结束",
-                    [signal.id],
-                    signal.observed_at or now,
-                )
-            if any(term in text for term in ("正在运动", "在跑步", "在骑车", "去跑步", "去运动", "去骑车")):
-                return (
-                    "exercising",
-                    0.70,
-                    "用户近期明确表示正在或准备去运动",
-                    [signal.id],
-                    signal.observed_at or now,
-                )
-            if any(term in text for term in ("在吃饭", "去食堂", "吃饭")):
-                return (
-                    "meal",
-                    0.65,
-                    "用户近期提到吃饭或去食堂",
-                    [signal.id],
-                    signal.observed_at or now,
-                )
+            if signal.age_seconds is not None and signal.age_seconds > 900:
+                continue
+            owner = parse_owner_state(text)
+            if owner.activity:
+                return (owner.activity, 0.8, "用户近期明确陈述当前活动", [signal.id], signal.observed_at or now)
+            if owner.place:
+                state = {"home": "at_home", "dorm": "at_home", "employer": "at_workplace", "campus": "on_campus", "library": "at_library"}.get(owner.place, "at_place")
+                return (state, 0.8, "用户近期明确陈述当前地点", [signal.id], signal.observed_at or now)
+            if owner.excluded_activities:
+                return ("unknown", 0.0, "用户否认相关活动，当前状态不能确定", [signal.id], signal.observed_at or now)
+            if owner.excluded_places:
+                # Don't resurrect an older owner location after a newer denial.
+                break
 
         # 2) Fresh sleep stage: 1/2/3 are asleep/deep/light; 5 is awake.
         sleep = by_id.get("health_sleep_stage_latest")
@@ -998,8 +971,8 @@ class ProactiveContextBuilder:
                 source="gps",
                 kind="last_reported_location",
                 value={
-                    "latitude": latest.latitude,
-                    "longitude": latest.longitude,
+                    # Coordinates are intentionally excluded from model-facing
+                    # context; only movement/freshness context is provided.
                     "movement": movement,
                     "distance_m": round(distance_m) if distance_m is not None else None,
                     "speed_mps": round(speed_mps, 2) if speed_mps is not None else None,
@@ -1112,7 +1085,11 @@ class ProactiveContextBuilder:
             source="weather",
             kind="current_conditions",
             value={
-                **data,
+                **{
+                    key: value
+                    for key, value in data.items()
+                    if key not in {"latitude", "longitude"}
+                },
                 "location_source": location_source,
                 "location_age_seconds": (
                     round(location_age) if location_age is not None else None
