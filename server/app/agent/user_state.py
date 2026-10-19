@@ -114,7 +114,7 @@ def parse_owner_state(text: str) -> OwnerState:
             continue
         # Explicit 'now' within a clause can disambiguate an earlier reference.
         current_clause = re.split(r"现在|此刻|目前|这会儿", clause)[-1]
-        if re.search(_PAST, current_clause):
+        if re.search(_PAST + r"|平时|一般|通常|经常|总是|每天|习惯|往往|可能|也许|大概|应该|估计|我想|我希望|想要|考虑", current_clause):
             continue
         clause = current_clause
         negative = re.search(r"(?:不(?:是)?在|没(?:有)?在|并非在)(" + _PLACE_WORDS + r")", clause)

@@ -4,7 +4,7 @@ Chat replies, proactive decisions, onboarding and continuity checks share a per-
 
 ## Owner statements
 
-Location and activity are separate. “I am not at the office” excludes the employer location; it does not imply another location or exclude working remotely. Future plans, past mentions, questions, quotes and hypothetical clauses do not become authoritative current facts. The interpreter uses a bounded clause grammar and leaves unsupported meanings unknown; it does not claim general language coverage.
+Location and activity are separate. “I am not at the office” excludes the employer location; it does not imply another location or exclude working remotely. Future plans, past mentions, questions, quotes, hypothetical clauses, habits, wishes and guesses do not become authoritative current facts. The interpreter uses a bounded clause grammar and leaves unsupported meanings unknown; it does not claim general language coverage.
 
 Recent location statements use a 15-minute evidence window, based on persisted message timestamps, without waiting for event extraction. Explicit current corrections override GPS and older conversation. A routine negative self-report is not automatically negative feedback.
 
