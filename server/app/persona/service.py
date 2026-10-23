@@ -74,6 +74,8 @@ class PersonaService:
         )
         self._canary = _parse_csv(settings.persona_canary_user_ids)
         self._portrait_service: Any = None
+        from app.persona.emotion import EmotionStore
+        self.emotions = EmotionStore(store.path.with_name("emotion.db"))
 
     @staticmethod
     def _default_presets_dir() -> Path:
@@ -270,7 +272,7 @@ class PersonaService:
                 open_loop_count=self.open_loop_count(scope),
             )
         return (
-            stable_persona_block(preset, self.active_character(scope)),
+            stable_persona_block(preset, self.active_character(scope)) + "\n\n" + self.emotion_prompt(scope),
             relationship_block(
                 relationship,
                 open_loop_count=policy.open_loop_count,
@@ -285,12 +287,22 @@ class PersonaService:
         relationship = self.relationship_state(scope)
         blocks = [
             stable_persona_block(preset, self.active_character(scope)),
+            self.emotion_prompt(scope),
             relationship_block(
                 relationship,
                 open_loop_count=self.open_loop_count(scope),
             ),
         ]
         return "\n\n".join(block for block in blocks if block)
+
+    def emotion_prompt(self, scope: MemoryScope) -> str:
+        state = self.emotions.current(scope.user_id, scope.agent_id)
+        if state["intensity"] < 0.08:
+            return ""
+        return ("[AURI CURRENT EMOTIONAL CONTEXT]\n"
+                f"你的当前感受：{state['name']}，强度约 {state['intensity']:.2f}；原因：{state['reason']}。"
+                "这是对话带来的短期情绪底色，随新情况自然变化。用自然措辞表达，不朗读标签或数值。"
+                "不要把用户忙碌、睡觉、迟回当作冒犯，不编造线下生活。")
 
     def build_proactive_context(
         self,
@@ -321,7 +333,7 @@ class PersonaService:
         )
         open_loops = self.open_loop_count(scope)
         return {
-            "persona_prompt": stable_persona_block(preset, self.active_character(scope)),
+            "persona_prompt": stable_persona_block(preset, self.active_character(scope)) + "\n\n" + self.emotion_prompt(scope),
             "relationship_prompt": relationship_block(
                 relationship,
                 open_loop_count=open_loops,

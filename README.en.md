@@ -12,6 +12,8 @@ Android 0.3.33 (versionCode 36) adds persona selection and visual polish: chat s
 
 Android **0.3.41 / versionCode 44** adds [AI health weekly reports](docs/HEALTH_WEEKLY_REPORTS.md): chat shows a short summary with a Details entry that opens the full HTML report, including tables and charts. Returning preserves chat position and drafts. Asking about overall health last week or requesting a resend attaches the corresponding summary again, reusing saved HTML. The legacy Health entry remains removed; loading, background generation and retry appear in the report reader. Reports default to the seven complete local dates ending yesterday. Automatic reports remain weekly; resending an original report preserves its saved dates. AI combines sleep, activity and resting heart rate to interpret changes, explain supporting or conflicting signals, and prioritize practical adjustments with follow-up observations; measured values, date-aligned joint evidence and charts come from validated facts. Self-hosted instances enable `AURI_WEEKLY_REPORTS_ENABLED` to start the worker.
 
+Current Android release: **0.3.42 / versionCode 45**. [Chat expression](docs/CHAT_EXPRESSION.md) adds persistent emotion, recoverable multi-message replies, optional familiar reaction memes and animated GIFs. The reviewed source manifest contains 48 community reactions; operators explicitly import images, and image binaries are not redistributed in this repository.
+
 ## Highlights
 
 - **Continuous chat:** persistent history, local Room cache, idempotent sends and asynchronous replies. Message acceptance and reply generation are separate states; each turn also selects a `micro`, `short`, `normal`, or `detailed` response style.

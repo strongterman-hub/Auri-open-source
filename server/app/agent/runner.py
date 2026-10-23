@@ -154,6 +154,7 @@ class AgentRunContext:
     persona_id: str | None = None
     persona_version: str | None = None
     policy_flags: dict[str, Any] | None = None
+    expression_prompt: str | None = None
 
 
 @dataclass
@@ -161,6 +162,7 @@ class AgentTurn:
     text: str
     tool_results: list[dict[str, str]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
+    expression: Any = None
 
 
 @dataclass
@@ -227,6 +229,8 @@ def _system_content(context: AgentRunContext) -> str:
         content += RESPONSE_STYLE_BLOCK_PREFIX + response_style_instruction(
             context.response_style
         )
+    if context.expression_prompt:
+        content += "\n\n" + context.expression_prompt
     return (
         content
         + "\n\n"
@@ -628,6 +632,12 @@ automatically a correction and does not require an apology or abandoning an earl
             if not response.tool_calls:
                 messages.append(self._assistant_message(response))
                 text = response.content or ""
+                expression = None
+                if context.expression_prompt:
+                    from app.chat.expression import parse_expression
+                    expression = parse_expression(text)
+                    text = expression.text
+                original_text = text
                 grounding = {}
                 text = await self._ground_reply(
                     context, text, tool_results, tool_logs, tools_by_name, grounding
@@ -643,7 +653,11 @@ automatically a correction and does not require an apology or abandoning an earl
                     grounding=grounding,
                     model=model,
                 )
-                return AgentTurn(text=text, tool_results=tool_results, usage=usage)
+                if expression is not None and text != original_text:
+                    # Grounding may rewrite facts. Never deliver pre-check fragments.
+                    expression.messages = [text]
+                    expression.sticker_id = None
+                return AgentTurn(text=text, tool_results=tool_results, usage=usage, expression=expression)
 
             messages.append(self._assistant_message(response))
             for tool_call in response.tool_calls:

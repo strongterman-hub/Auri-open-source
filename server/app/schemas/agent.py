@@ -41,6 +41,7 @@ class SendMessageResponse(BaseModel):
 
 class AsyncSendMessageRequest(SendMessageRequest):
     client_message_id: str = Field(min_length=1, max_length=128)
+    capabilities: list[str] = Field(default_factory=list, max_length=8)
 
 
 class AsyncSendMessageResponse(BaseModel):

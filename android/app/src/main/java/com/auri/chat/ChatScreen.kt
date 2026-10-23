@@ -559,6 +559,12 @@ private fun MessageBubble(
     onAction: (ChatAction) -> Unit,
     onOpenHealthReport: (String) -> Unit,
 ) {
+    if (!message.isUser && message.sticker != null) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+            StickerBubble(message.sticker)
+        }
+        return
+    }
     val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
     val bubbleColor = when {
         message.isUser -> MaterialTheme.colorScheme.primary

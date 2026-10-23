@@ -25,7 +25,7 @@ def _parse(value: str | None) -> datetime | None:
     return parsed
 
 
-OPEN_STATUSES = ("queued", "planning", "typing", "retry_wait")
+OPEN_STATUSES = ("queued", "planning", "typing", "retry_wait", "delivering")
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,7 @@ class ReplyJob:
     attempt_count: int
     lease_until: datetime | None = None
     last_error: str | None = None
+    capabilities: tuple[str, ...] = ()
 
 
 class ChatReplyStore:
@@ -54,6 +55,8 @@ class ChatReplyStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        from app.chat.outbox import ReplyOutbox
+        self.outbox = ReplyOutbox(self.path)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(str(self.path), timeout=30)
@@ -115,6 +118,8 @@ class ChatReplyStore:
                 connection.execute(
                     "ALTER TABLE chat_reply_jobs ADD COLUMN verbosity TEXT"
                 )
+            if "capabilities" not in columns:
+                connection.execute("ALTER TABLE chat_reply_jobs ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'")
 
     @staticmethod
     def _job(row: sqlite3.Row) -> ReplyJob:
@@ -134,6 +139,7 @@ class ChatReplyStore:
             attempt_count=int(row["attempt_count"] or 0),
             lease_until=_parse(row["lease_until"]),
             last_error=row["last_error"],
+            capabilities=tuple(json.loads(row["capabilities"] or "[]")),
         )
 
     def enqueue(
@@ -144,11 +150,14 @@ class ChatReplyStore:
         agent_id: str,
         message_id: str,
         debounce_seconds: float,
+        capabilities: list[str] | None = None,
     ) -> ReplyJob:
         now = _utcnow()
         debounce_at = now + timedelta(seconds=max(0.0, debounce_seconds))
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            from app.chat.outbox import ReplyOutbox
+            transferred = ReplyOutbox.interrupt(connection, session_id)
             row = connection.execute(
                 """
                 SELECT * FROM chat_reply_jobs
@@ -159,6 +168,7 @@ class ChatReplyStore:
             ).fetchone()
             if row is not None:
                 ids = list(json.loads(row["message_ids"] or "[]"))
+                ids = list(dict.fromkeys([*transferred, *ids]))
                 if message_id not in ids:
                     ids.append(message_id)
                 existing_due = _parse(row["not_before"]) or now
@@ -168,10 +178,10 @@ class ChatReplyStore:
                     UPDATE chat_reply_jobs
                     SET message_ids = ?, planned = 0, status = 'queued',
                         last_received_at = ?, not_before = ?, updated_at = ?,
-                        lease_until = NULL, last_error = NULL, verbosity = NULL
+                        lease_until = NULL, last_error = NULL, verbosity = NULL, capabilities = ?
                     WHERE id = ?
                     """,
-                    (json.dumps(ids), _iso(now), _iso(due), _iso(now), row["id"]),
+                    (json.dumps(ids), _iso(now), _iso(due), _iso(now), json.dumps(capabilities or []), row["id"]),
                 )
                 updated = connection.execute(
                     "SELECT * FROM chat_reply_jobs WHERE id = ?", (row["id"],)
@@ -184,20 +194,21 @@ class ChatReplyStore:
                 INSERT INTO chat_reply_jobs (
                     id, session_id, user_id, agent_id, status, message_ids,
                     planned, first_received_at, last_received_at, not_before,
-                    attempt_count, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'queued', ?, 0, ?, ?, ?, 0, ?, ?)
+                    attempt_count, created_at, updated_at, capabilities
+                ) VALUES (?, ?, ?, ?, 'queued', ?, 0, ?, ?, ?, 0, ?, ?, ?)
                 """,
                 (
                     job_id,
                     session_id,
                     user_id,
                     agent_id,
-                    json.dumps([message_id]),
+                    json.dumps(list(dict.fromkeys([*transferred, message_id]))),
                     _iso(now),
                     _iso(now),
                     _iso(debounce_at),
                     _iso(now),
                     _iso(now),
+                    json.dumps(capabilities or []),
                 ),
             )
             created = connection.execute(
@@ -271,7 +282,7 @@ class ChatReplyStore:
                     """
                     UPDATE chat_reply_jobs
                     SET status = 'silent', completed_at = ?, lease_until = NULL,
-                        updated_at = ? WHERE id = ?
+                        updated_at = ? WHERE id = ? AND status='planning'
                     """,
                     (_iso(now), _iso(now), job_id),
                 )
@@ -281,7 +292,7 @@ class ChatReplyStore:
                 """
                 UPDATE chat_reply_jobs
                 SET status = 'queued', planned = 1, lane = ?, verbosity = ?,
-                    not_before = ?, lease_until = NULL, updated_at = ? WHERE id = ?
+                    not_before = ?, lease_until = NULL, updated_at = ? WHERE id = ? AND status='planning'
                 """,
                 (
                     lane or "fast",
@@ -316,10 +327,12 @@ class ChatReplyStore:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT attempt_count FROM chat_reply_jobs WHERE id = ?", (job_id,)
+                "SELECT attempt_count,status FROM chat_reply_jobs WHERE id = ?", (job_id,)
             ).fetchone()
             if row is None:
                 return "failed"
+            if row["status"] == "cancelled":
+                return "cancelled"
             attempts = int(row["attempt_count"] or 0) + 1
             status = "failed" if attempts >= max(1, max_attempts) else "retry_wait"
             due = now + timedelta(seconds=max(0.0, delay_seconds))
@@ -349,11 +362,13 @@ class ChatReplyStore:
             rows = connection.execute(
                 """
                 SELECT status FROM chat_reply_jobs
-                WHERE session_id = ? AND status IN ('queued', 'planning', 'typing', 'retry_wait')
+                WHERE session_id = ? AND status IN ('queued', 'planning', 'typing', 'retry_wait','delivering')
                 """,
                 (session_id,),
             ).fetchall()
         states = {row["status"] for row in rows}
+        if "delivering" in states:
+            return "delivering"
         if "typing" in states:
             return "typing"
         if states:
@@ -366,7 +381,7 @@ class ChatReplyStore:
                 """
                 SELECT 1 FROM chat_reply_jobs
                 WHERE user_id = ? AND agent_id = ?
-                  AND status IN ('queued', 'planning', 'typing', 'retry_wait')
+                  AND status IN ('queued', 'planning', 'typing', 'retry_wait','delivering')
                 LIMIT 1
                 """,
                 (user_id, agent_id),
@@ -380,16 +395,21 @@ class ChatReplyStore:
                 """
                 UPDATE chat_reply_jobs SET status = 'cancelled', completed_at = ?,
                     lease_until = NULL, updated_at = ?
-                WHERE session_id = ? AND status IN ('queued', 'planning', 'typing', 'retry_wait')
+                WHERE session_id = ? AND status IN ('queued', 'planning', 'typing', 'retry_wait','delivering')
                 """,
                 (now, now, session_id),
             )
             connection.execute(
                 "DELETE FROM chat_client_commands WHERE session_id = ?", (session_id,)
             )
+            connection.execute("UPDATE chat_reply_parts SET status='cancelled' WHERE group_id IN "
+                               "(SELECT id FROM chat_reply_groups WHERE session_id=?) AND status!='delivered'", (session_id,))
 
     def delete_user(self, user_id: str, agent_id: str = "default") -> None:
         with self._connect() as connection:
+            connection.execute("DELETE FROM chat_reply_parts WHERE group_id IN "
+                               "(SELECT id FROM chat_reply_groups WHERE user_id=? AND agent_id=?)", (user_id,agent_id))
+            connection.execute("DELETE FROM chat_reply_groups WHERE user_id=? AND agent_id=?", (user_id,agent_id))
             session_rows = connection.execute(
                 "SELECT DISTINCT session_id FROM chat_reply_jobs "
                 "WHERE user_id = ? AND agent_id = ?",

@@ -64,8 +64,10 @@ class AccountDeletionService:
         schedule_service=None,
         event_memory_service=None,
         report_store=None,
+        emotion_store=None,
     ) -> None:
         self.auth_store = auth_store
+        self.emotion_store = emotion_store
         self.billing_store = billing_store
         self.session_service = session_service
         self.memory_service = memory_service
@@ -144,6 +146,8 @@ class AccountDeletionService:
             self.chat_reply_store.delete_user(user_id, agent_id)
         if self.persona_store is not None:
             self.persona_store.delete_user(user_id, agent_id)
+        if self.emotion_store is not None:
+            self.emotion_store.delete_user(user_id, agent_id)
         self.billing_store.delete_user(user_id)
 
         self.auth_store.delete_tokens_for_user(user_id)

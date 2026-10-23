@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -8,6 +9,7 @@ from app.config import Settings
 from app.memory.models import MemoryScope
 from app.persona.models import PortraitSettings, PortraitState
 from app.persona.portrait import (
+    DEFAULT_STATIC_ROOT,
     DEFAULT_VARIANT,
     PRESENTATIONS,
     image_url,
@@ -123,6 +125,7 @@ class PortraitService:
         presentation_provider: Callable[[MemoryScope], str | None] | None = None,
         weather_provider: Callable[[MemoryScope], dict[str, Any] | None] | None = None,
         static_root: Path | str | None = None,
+        emotion_provider: Callable[[MemoryScope], dict] | None = None,
     ) -> None:
         self.store = store
         self.settings = settings
@@ -133,6 +136,7 @@ class PortraitService:
         self.presentation_provider = presentation_provider
         self.weather_provider = weather_provider
         self.static_root = static_root
+        self.emotion_provider = emotion_provider
         self._canary = _parse_csv(settings.portrait_canary_user_ids)
         default_presentation = str(settings.portrait_default_presentation or "female")
         self.default_presentation = (
@@ -295,6 +299,9 @@ class PortraitService:
             local_hour=local_now.hour,
             tired_threshold=max(1, int(self.settings.portrait_sleep_tired_threshold or 60)),
         )
+        emotion = self.emotion_provider(scope) if self.emotion_provider else {}
+        if emotion.get("intensity", 0) >= 0.12 and mood != "tired":
+            mood = {"happy": "cheerful", "excited": "cheerful", "sad": "low"}.get(emotion.get("name"), mood)
         stage = self._stage(scope)
         presentation = self.presentation_for(scope)
         recent: list[str] = []
@@ -338,10 +345,27 @@ class PortraitService:
             signals=signals,
             resolved_at=current,
         )
+        from app.persona.portrait_library import choose_asset
+        asset = choose_asset(Path(self.static_root or DEFAULT_STATIC_ROOT), presentation, variant,
+                             previous, current, max(60, self.settings.portrait_refresh_seconds))
+        if asset:
+            state.signals["portrait_asset"] = asset
+            asset_history = list((previous.signals if previous else {}).get("recent_asset_ids", []))
+            if not asset_history or asset_history[-1] != asset["id"]:
+                asset_history.append(asset["id"])
+            state.signals["recent_asset_ids"] = asset_history[-6:]
+        state.signals["character_emotion"] = emotion.get("name", "calm")
         self.store.save_portrait_state(scope.user_id, scope.agent_id, state)
         return state
 
     def image_urls(self, state: PortraitState) -> tuple[str, str, str]:
+        asset = state.signals.get("portrait_asset")
+        if asset:
+            return state.variant, asset["url"], asset["small_url"]
+        from app.persona.portrait_library import library_version
+        if library_version(Path(self.static_root or DEFAULT_STATIC_ROOT)):
+            # A partial new library must not resurrect rejected backgrounds.
+            return state.variant, "", ""
         return resolve_images(
             state.presentation,
             state.variant,
@@ -349,6 +373,11 @@ class PortraitService:
         )
 
     def urls_for(self, presentation: str, variant: str) -> tuple[str, str]:
+        from app.persona.portrait_library import choose_asset, library_version
+        root = Path(self.static_root or DEFAULT_STATIC_ROOT)
+        if library_version(root):
+            asset = choose_asset(root, presentation, variant, None, _utcnow(), 0)
+            return asset.get("url", ""), asset.get("small_url", "")
         effective, large, small = resolve_images(
             presentation,
             variant,
@@ -359,6 +388,13 @@ class PortraitService:
     def avatar_url(self, presentation: str) -> str:
         """Resolve the character avatar, or an empty string when unavailable."""
 
+        from app.persona.portrait_library import library_version
+        root = Path(self.static_root or DEFAULT_STATIC_ROOT)
+        version = library_version(root)
+        if version:
+            if presentation in PRESENTATIONS and (root / version / "avatar" / f"{presentation}.png").is_file():
+                return f"/static/portrait/{version}/avatar/{presentation}.png"
+            return ""
         return resolve_avatar(presentation, static_root=self.static_root)
 
     # -- observation hook ------------------------------------------------

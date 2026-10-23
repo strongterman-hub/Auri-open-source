@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict
 
 from app.api.dependencies import ContainerDep, CurrentUserDep
 from app.memory.models import MemoryScope
@@ -15,6 +16,23 @@ from app.schemas.persona import (
 )
 
 router = APIRouter(prefix="/persona", tags=["persona"])
+
+
+class ExpressionPreferencesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    continuous_messages: bool | None = None
+    stickers: bool | None = None
+
+
+@router.get("/expressions")
+async def get_expression_preferences(container: ContainerDep, current_user: CurrentUserDep) -> dict:
+    return container.persona_service.emotions.preferences(current_user.id)
+
+
+@router.put("/expressions")
+async def update_expression_preferences(payload: ExpressionPreferencesRequest,
+                                        container: ContainerDep, current_user: CurrentUserDep) -> dict:
+    return container.persona_service.emotions.set_preferences(current_user.id, **payload.model_dump())
 
 
 @router.get("/presets", response_model=PersonaPresetsResponse)

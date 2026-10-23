@@ -9,6 +9,9 @@ from typing import Any
 
 from app.chat.reply_planner import ChatReplyPlanner
 from app.chat.reply_store import ChatReplyStore, ReplyJob
+from app.chat.expression import StickerCatalog, expression_instruction, parse_expression
+from app.memory.models import MemoryScope
+from app.reports.tool import SendHealthReportTool
 from app.proactive.models import ProactiveDecision, TriggerType
 from app.proactive.push import PushSender
 from app.schemas.agent import FileAttachment
@@ -63,6 +66,7 @@ class ChatReplyService:
         content: str,
         images: list[str] | None = None,
         files: list[FileAttachment] | None = None,
+        capabilities: list[str] | None = None,
     ) -> tuple[Any, dict, str]:
         session, message, duplicate = await self.agent_service.accept_message(
             session_id,
@@ -78,10 +82,13 @@ class ChatReplyService:
                 agent_id=session.agent_id,
                 message_id=message["id"],
                 debounce_seconds=self.debounce_seconds,
+                capabilities=capabilities,
             )
         return session, message, self.store.reply_state(session.id)
 
     async def process_one(self) -> bool:
+        if await self.deliver_one():
+            return True
         job = self.store.claim_due()
         if job is None:
             return False
@@ -178,13 +185,54 @@ class ChatReplyService:
 
         requester = LocationRequester(self.presence, emit_location_request)
         try:
+            settings = getattr(self.agent_service, "settings", None)
+            expressive = bool(getattr(settings, "chat_expression_enabled", True)
+                              and "message_sequence_v1" in job.capabilities)
+            prompt = None
+            presentation = "female"
+            preferences = {"continuous_messages": True, "stickers": True}
+            persona = getattr(self.agent_service, "persona_service", None)
+            catalog = StickerCatalog()
+            scope = MemoryScope(user_id=job.user_id, agent_id=job.agent_id)
+            if expressive:
+                state = {"name": "calm", "intensity": 0.0}
+                candidates = []
+                if persona is not None:
+                    preferences = persona.emotions.preferences(job.user_id, job.agent_id)
+                    state = persona.emotions.current(job.user_id, job.agent_id)
+                    presentation = persona.resolve_presentation(scope) or persona.default_presentation()
+                    recent = persona.emotions.recent_stickers(job.user_id, job.agent_id)
+                    if preferences["stickers"] and "stickers_v1" in job.capabilities:
+                        session = await self.session_service.get(job.session_id)
+                        query = "\n".join(self.agent_service._content_text(m.get("content", ""))
+                                          for m in session.messages if m.get("id") in job.message_ids)
+                        candidates = catalog.candidates(presentation, query, recent, emotion=state.get("name", "calm"))
+                prompt = expression_instruction(state, candidates, allow_sequence=preferences["continuous_messages"])
+            kwargs = {"defer_delivery": True, "expression_prompt": prompt} if expressive else {}
             turn, scope, _session, message = await self.agent_service.reply_to_messages(
                 job.session_id,
                 job.message_ids,
                 reply_job_id=job.id,
                 response_style=job.verbosity or "short",
                 location_requester=requester,
+                **kwargs,
             )
+            if expressive:
+                plan = turn.expression or parse_expression(turn.text)
+                # Tool cards and reports remain one complete information unit.
+                contents = list(plan.messages) if preferences["continuous_messages"] else [turn.text]
+                if not isinstance(message["content"], str):
+                    contents = [message["content"]]
+                elif preferences["stickers"] and "stickers_v1" in job.capabilities and len(contents) < 4:
+                    recent = persona.emotions.recent_stickers(job.user_id, job.agent_id) if persona else []
+                    sticker = catalog.resolve(plan.sticker_id, presentation) if plan.sticker_id not in recent else None
+                    if sticker:
+                        contents.append([{"type": "text", "text": f"[{sticker['description']}]"}, sticker])
+                if not contents:
+                    raise ValueError("empty reply plan")
+                self.store.outbox.prepare(job, contents, plan.emotion,
+                                          gap=float(getattr(settings, "chat_message_gap_seconds", 1.4)))
+                return
             await self.session_service.settle_messages(
                 job.session_id,
                 job.message_ids,
@@ -242,6 +290,88 @@ class ChatReplyService:
                 )
             except Exception:
                 self.logger.exception("dense onboarding follow-up failed job=%s", job.id)
+
+    async def deliver_one(self) -> bool:
+        part = self.store.outbox.claim()
+        if part is None:
+            return False
+        try:
+            async with self.session_service.lock_for(part["session_id"]):
+                session = await self.session_service.get(part["session_id"])
+                existing = next((m for m in session.messages if m.get("id") == part["id"]), None)
+                if existing is None:
+                    if not self.store.outbox.active(part["id"]):
+                        return True
+                    blocks = part["content"] if isinstance(part["content"], list) else []
+                    sticker = next((b for b in blocks if b.get("type") == "sticker"), None)
+                    persona = getattr(self.agent_service, "persona_service", None)
+                    if sticker and persona is not None:
+                        scope = MemoryScope(user_id=part["user_id"], agent_id=part["agent_id"])
+                        presentation = persona.resolve_presentation(scope) or persona.default_presentation()
+                        if (not persona.emotions.preferences(part["user_id"], part["agent_id"])["stickers"]
+                                or sticker.get("presentation") not in ("any", presentation)):
+                            self.store.outbox.skip(part)
+                            return True
+                    last_source = max((i for i,m in enumerate(session.messages) if m.get("id") in part["source_ids"]), default=-1)
+                    if last_source < 0 or any(m.get("role") == "user" for m in session.messages[last_source+1:]):
+                        # accept() may still be between persistence and enqueue.
+                        # Fence only this group; never cancel the new input job.
+                        with self.store._connect() as db:
+                            db.execute("UPDATE chat_reply_jobs SET status='cancelled' WHERE id=?", (part["group_id"],))
+                            db.execute("UPDATE chat_reply_parts SET status='cancelled' WHERE group_id=? AND status!='delivered'", (part["group_id"],))
+                        return True
+                    message = {
+                        "id": part["id"], "role": "assistant", "content": part["content"],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "reply_job_id": part["group_id"], "reply_group_id": part["group_id"],
+                        "reply_to_message_ids": part["source_ids"], "part_index": part["part_index"],
+                        "part_count": part["part_count"],
+                    }
+                    session.messages.append(message)
+                    for source in session.messages:
+                        if source.get("id") in part["source_ids"]:
+                            source["reply_disposition"] = "replied"
+                            source["reply_job_id"] = part["group_id"]
+                    session.touch()
+                    await self.session_service.save(session)
+                finished, notify = self.store.outbox.delivered(part)
+            # Effects use durable IDs. Recovered already-saved parts can safely
+            # resume effects without saving or charging a model call again.
+            persona = getattr(self.agent_service, "persona_service", None)
+            scope = MemoryScope(user_id=part["user_id"], agent_id=part["agent_id"])
+            content = part["content"]
+            if notify:
+                text = self.agent_service._content_text(content)
+                decision = ProactiveDecision(id=part["id"], user_id=part["user_id"], agent_id=part["agent_id"],
+                    trigger_type=TriggerType.event, should_message=True, message=text or "新消息", push_message=(text or "新消息")[:180])
+                try:
+                    await self.push_sender.send(decision, self.presence.device_tokens(part["user_id"], part["agent_id"]))
+                except Exception:
+                    self.logger.exception("group notification failed group=%s", part["group_id"])
+            sticker_id = next((p.get("id") for p in content if isinstance(p,dict) and p.get("type")=="sticker"), None) if isinstance(content,list) else None
+            try:
+                if persona is not None:
+                    first = persona.emotions.apply(part["user_id"], part["agent_id"], part["id"],
+                                                   part["emotion"] if part["part_index"] == 0 else {}, sticker_id)
+                    if first:
+                        persona.on_assistant_message(scope, self.agent_service._content_text(content),
+                                                     source="chat", source_ref=part["id"])
+            except Exception:
+                self.logger.exception("delivered reply state update failed id=%s", part["id"])
+            if isinstance(content, list):
+                for block in content:
+                    if block.get("type") == "actions":
+                        ids = [a["report_id"] for a in block.get("actions",[]) if a.get("type")=="open_health_report"]
+                        for tool in self.agent_service.tool_factory(scope):
+                            if isinstance(tool, SendHealthReportTool):
+                                tool.requested_ids.update(ids)
+                                tool.acknowledge()
+            if finished and self.agent_service.dense_onboarding_hook is not None:
+                await self.agent_service.dense_onboarding_hook(part["user_id"],part["agent_id"])
+        except Exception as exc:
+            self.store.outbox.retry(part["id"], type(exc).__name__)
+            self.logger.exception("outbound part delivery failed id=%s", part["id"])
+        return True
 
     def updates(self, session_id: str) -> tuple[str, list[dict]]:
         return self.store.reply_state(session_id), self.store.pop_commands(session_id)

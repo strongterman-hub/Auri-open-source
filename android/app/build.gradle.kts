@@ -24,8 +24,8 @@ android {
         applicationId = appId
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.3.41"
+        versionCode = 45
+        versionName = "0.3.42"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
         manifestPlaceholders["JPUSH_PKGNAME"] = appId
@@ -118,6 +118,7 @@ dependencies {
     implementation("io.noties.markwon:ext-strikethrough:4.6.2")
     implementation("io.noties.markwon:ext-tasklist:4.6.2")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-gif:2.6.0")
     implementation("cn.jiguang.sdk:jpush:6.2.1")
     implementation("com.alipay.sdk:alipaysdk-android:15.8.42")
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -88,6 +88,7 @@ fun ChatSettingsScreen(
     onBack: () -> Unit,
     viewModel: ChatViewModel = viewModel(),
 ) {
+    LaunchedEffect(viewModel) { viewModel.loadExpressionPreferences() }
     val context = LocalContext.current
     val prefs = remember {
         context.getSharedPreferences("auri_settings", Context.MODE_PRIVATE)
@@ -186,6 +187,7 @@ fun ChatSettingsScreen(
                 onRetryPersona = { viewModel.loadPersonaOptions() },
                 onPresentation = { showPresentationSheet = true },
                 onPersonality = { showPersonalitySheet = true },
+                expressionSettings = { ExpressionSettingsGroup(viewModel) },
             )
         }
     }
@@ -335,6 +337,7 @@ private fun ChatSettingsContent(
     onRetryPersona: () -> Unit,
     onPresentation: () -> Unit,
     onPersonality: () -> Unit,
+    expressionSettings: @Composable () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -358,6 +361,7 @@ private fun ChatSettingsContent(
             onPresentation = onPresentation,
             onPersonality = onPersonality,
         )
+        expressionSettings()
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),

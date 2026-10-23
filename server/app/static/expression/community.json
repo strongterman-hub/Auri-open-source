@@ -1,0 +1,1415 @@
+{
+  "version": "community-20261023",
+  "description": "Manually reviewed familiar community reaction memes, not a real-time trending ranking.",
+  "source_index": "https://zhaoolee.com/ChineseBQB/catalog/search.json",
+  "stickers": [
+    {
+      "id": "meme-bqb-50e5d113498a9ec84876",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-50e5d113498a9ec84876.png",
+      "description": "负鼠：已深度思考",
+      "emotion": "calm",
+      "tags": [
+        "思考",
+        "想不通",
+        "卡住",
+        "想想"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/943f47c029eb64ea0d140f9d33858cceea8baf3b81151ea872ff993db295cd58.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "50e5d113498a9ec84876",
+      "sha256": "943f47c029eb64ea0d140f9d33858cceea8baf3b81151ea872ff993db295cd58",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-e8da6aec28a1c343c81d",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-e8da6aec28a1c343c81d.png",
+      "description": "负鼠：好的呢，职业假笑",
+      "emotion": "playful",
+      "tags": [
+        "工作",
+        "改方案",
+        "加班",
+        "职场"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4af9057cbde1a71bdb61354ffa851da68204f2da73b921d113e6d16e2f98d825.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "e8da6aec28a1c343c81d",
+      "sha256": "4af9057cbde1a71bdb61354ffa851da68204f2da73b921d113e6d16e2f98d825",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-01df51095b69743dfc9b",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-01df51095b69743dfc9b.png",
+      "description": "负鼠：我没有梦想，我只想玩",
+      "emotion": "playful",
+      "tags": [
+        "想玩",
+        "放假",
+        "周末",
+        "摸鱼"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/317c34ccc0222e9e47db4e167e89d44076d13d9c287f46bd78c20cd181ff089e.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "01df51095b69743dfc9b",
+      "sha256": "317c34ccc0222e9e47db4e167e89d44076d13d9c287f46bd78c20cd181ff089e",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-0f041398db4c6067cff2",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-0f041398db4c6067cff2.jpg",
+      "description": "负鼠：I am fine，自嘲强撑",
+      "emotion": "sad",
+      "tags": [
+        "无奈",
+        "心累",
+        "没事"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/cee5de9dc2baf958657c1a00276d79f5b431572adb44c4747f3110b12f1c85a6.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "0f041398db4c6067cff2",
+      "sha256": "cee5de9dc2baf958657c1a00276d79f5b431572adb44c4747f3110b12f1c85a6",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-1d9a45603df595994727",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-1d9a45603df595994727.jpg",
+      "description": "负鼠：重生之我又回到了周一",
+      "emotion": "playful",
+      "tags": [
+        "周一",
+        "上班",
+        "星期一"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/586241e4e9fa3c985e6bc93a2b7c62246548bf5c7f0decc4905583cc0b51d93b.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "1d9a45603df595994727",
+      "sha256": "586241e4e9fa3c985e6bc93a2b7c62246548bf5c7f0decc4905583cc0b51d93b",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-3c83322e4c9b3a76ed83",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-3c83322e4c9b3a76ed83.png",
+      "description": "负鼠：简单的事情我不想做，自嘲犯懒",
+      "emotion": "playful",
+      "tags": [
+        "懒",
+        "摸鱼",
+        "不想干"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4009890d8e5b21ee2f65c9e251b16c9e25ad7c271ddbc4a554bc243580828858.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-109",
+      "source_id": "3c83322e4c9b3a76ed83",
+      "sha256": "4009890d8e5b21ee2f65c9e251b16c9e25ad7c271ddbc4a554bc243580828858",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-dd3069c856f47903bad9",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-dd3069c856f47903bad9.png",
+      "description": "问号猫：疑惑歪头",
+      "emotion": "calm",
+      "tags": [
+        "疑问",
+        "为什么",
+        "问号",
+        "没懂",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/0a2c7522033779fba3bb328163e7352c31a0c05407b251f83e3625d56eebe401.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-060",
+      "source_id": "dd3069c856f47903bad9",
+      "sha256": "0a2c7522033779fba3bb328163e7352c31a0c05407b251f83e3625d56eebe401",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-546517b9bdeed87eac6b",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-546517b9bdeed87eac6b.gif",
+      "description": "星星眼猫：期待惊喜",
+      "emotion": "excited",
+      "tags": [
+        "期待",
+        "惊喜",
+        "喜欢",
+        "星星",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/6690b2ad370d5038578d98ad9732e0f119ff100309fc4808ee73db36bf4aea26.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-060",
+      "source_id": "546517b9bdeed87eac6b",
+      "sha256": "6690b2ad370d5038578d98ad9732e0f119ff100309fc4808ee73db36bf4aea26",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-05d39bc3ad76cc1e5a9c",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-05d39bc3ad76cc1e5a9c.png",
+      "description": "思维升华猫",
+      "emotion": "playful",
+      "tags": [
+        "学会",
+        "原来",
+        "知识",
+        "明白",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/348e2f89c7c9a416230149aa50b5cb5ae85946e622c0dea455e0f90c86a13020.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-060",
+      "source_id": "05d39bc3ad76cc1e5a9c",
+      "sha256": "348e2f89c7c9a416230149aa50b5cb5ae85946e622c0dea455e0f90c86a13020",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-f789adb5ab6c66a6ee9c",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-f789adb5ab6c66a6ee9c.png",
+      "description": "停止思考猫：被绕晕了",
+      "emotion": "playful",
+      "tags": [
+        "绕晕",
+        "混乱",
+        "烧脑",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/ef5d9b03664770710e9bc75d02ce3b7e504e75e7763a4b02b1e8ab0200f82f74.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-060",
+      "source_id": "f789adb5ab6c66a6ee9c",
+      "sha256": "ef5d9b03664770710e9bc75d02ce3b7e504e75e7763a4b02b1e8ab0200f82f74",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-c19ebe0a99f85efee7a5",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-c19ebe0a99f85efee7a5.png",
+      "description": "奇怪的知识增加了猫",
+      "emotion": "playful",
+      "tags": [
+        "知识",
+        "第一次知道",
+        "学到",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/17106964b6ddfa065d5b9d717c11556101d9246a266e05291e8b073668bc10d4.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-060",
+      "source_id": "c19ebe0a99f85efee7a5",
+      "sha256": "17106964b6ddfa065d5b9d717c11556101d9246a266e05291e8b073668bc10d4",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-03a6c2eaf9e065bc4958",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-03a6c2eaf9e065bc4958.jpg",
+      "description": "柴犬：迷茫",
+      "emotion": "calm",
+      "tags": [
+        "迷茫",
+        "不懂",
+        "狗",
+        "困惑"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/79f9ec8143cd70fe4d25dc89f31875a063b8a3fc6e0f6aace92975d3e160e50f.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "03a6c2eaf9e065bc4958",
+      "sha256": "79f9ec8143cd70fe4d25dc89f31875a063b8a3fc6e0f6aace92975d3e160e50f",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-b5757149bf09b7e46c8a",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-b5757149bf09b7e46c8a.gif",
+      "description": "狗狗捂脸：没眼看",
+      "emotion": "playful",
+      "tags": [
+        "尴尬",
+        "没眼看",
+        "捂脸",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/fd5c9538412388ff63a30fd49a87608e92e660ec29b9f4cb461001a990de7dcf.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "b5757149bf09b7e46c8a",
+      "sha256": "fd5c9538412388ff63a30fd49a87608e92e660ec29b9f4cb461001a990de7dcf",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-6c14e75456e3a079d8db",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-6c14e75456e3a079d8db.jpg",
+      "description": "狗狗：行8",
+      "emotion": "calm",
+      "tags": [
+        "行吧",
+        "好吧",
+        "可以",
+        "收到",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/f0fb48c061df1b52ccdbfb9f4b9577115f9a260d028def6533e1917e5ef32ba9.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "6c14e75456e3a079d8db",
+      "sha256": "f0fb48c061df1b52ccdbfb9f4b9577115f9a260d028def6533e1917e5ef32ba9",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-73162d05ab49ceb1509e",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-73162d05ab49ceb1509e.jpg",
+      "description": "狗狗：一脸平静",
+      "emotion": "calm",
+      "tags": [
+        "冷静",
+        "平静",
+        "淡定",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4065d5d3be0978b18046400394fcaea12630b43ea16cd92c733d99d1ff7c6a04.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "73162d05ab49ceb1509e",
+      "sha256": "4065d5d3be0978b18046400394fcaea12630b43ea16cd92c733d99d1ff7c6a04",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-bec392d94a90994e2819",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-bec392d94a90994e2819.gif",
+      "description": "柴犬挠头：认真想一想",
+      "emotion": "calm",
+      "tags": [
+        "思考",
+        "纠结",
+        "想想",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/6561ffb44cecba294d0a519982f384245c6c6c597e721b188df379a99001989c.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "bec392d94a90994e2819",
+      "sha256": "6561ffb44cecba294d0a519982f384245c6c6c597e721b188df379a99001989c",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-8d4d70e0962c14e9229d",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-8d4d70e0962c14e9229d.jpg",
+      "description": "金毛：强颜欢笑，自嘲无奈",
+      "emotion": "playful",
+      "tags": [
+        "无奈",
+        "苦笑",
+        "尴尬",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/af4e709216604fceae310f4cef16dde5446ed27ba8af24a0c88e10092a306872.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "8d4d70e0962c14e9229d",
+      "sha256": "af4e709216604fceae310f4cef16dde5446ed27ba8af24a0c88e10092a306872",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-5e46a70c2076c95fd3f6",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-5e46a70c2076c95fd3f6.jpg",
+      "description": "柴犬：裹紧我俩的小被子",
+      "emotion": "concerned",
+      "tags": [
+        "抱抱",
+        "冷",
+        "被子",
+        "安慰",
+        "陪伴",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/6d4e834b4db0ef632e566008c5e035ae55692a5ecda70e55db9a3f56e4554cd2.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "5e46a70c2076c95fd3f6",
+      "sha256": "6d4e834b4db0ef632e566008c5e035ae55692a5ecda70e55db9a3f56e4554cd2",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-06f30b377c261b4c411f",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-06f30b377c261b4c411f.gif",
+      "description": "柴犬：摸摸头安慰",
+      "emotion": "concerned",
+      "tags": [
+        "安慰",
+        "摸摸",
+        "辛苦",
+        "难过",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/45cc35a47bb03c6dd92bb357eda5687c6bcb144217b77d3812d40ae8ca284925.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "06f30b377c261b4c411f",
+      "sha256": "45cc35a47bb03c6dd92bb357eda5687c6bcb144217b77d3812d40ae8ca284925",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-ed6b61b05b5bae23d963",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-ed6b61b05b5bae23d963.gif",
+      "description": "柴犬：俏皮眨眼",
+      "emotion": "playful",
+      "tags": [
+        "眨眼",
+        "调皮",
+        "俏皮",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/64de8c6ced76072a69ab17904e95b64e9ebef068735415330eed2f933183708c.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "ed6b61b05b5bae23d963",
+      "sha256": "64de8c6ced76072a69ab17904e95b64e9ebef068735415330eed2f933183708c",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-cbd12909585b5e87da22",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-cbd12909585b5e87da22.gif",
+      "description": "柴犬：得意微笑",
+      "emotion": "happy",
+      "tags": [
+        "成功",
+        "厉害",
+        "通过",
+        "开心",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/dcb4a69dfeb74654b9c3b4d8f578b4b5e0100685df080cd793ae1900b0d420b6.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "cbd12909585b5e87da22",
+      "sha256": "dcb4a69dfeb74654b9c3b4d8f578b4b5e0100685df080cd793ae1900b0d420b6",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-35eafc1d79beb2bb8d52",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-35eafc1d79beb2bb8d52.gif",
+      "description": "柴犬：邪魅一笑，玩笑回应",
+      "emotion": "playful",
+      "tags": [
+        "逗",
+        "嘿嘿",
+        "笑",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/b70d5e5d6d8c0a36d23f80995e642304604429bf0035001dc76bda0cd9017426.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "35eafc1d79beb2bb8d52",
+      "sha256": "b70d5e5d6d8c0a36d23f80995e642304604429bf0035001dc76bda0cd9017426",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-379653d05dcccdae7595",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-379653d05dcccdae7595.gif",
+      "description": "狗狗：忽然警觉",
+      "emotion": "calm",
+      "tags": [
+        "警觉",
+        "等等",
+        "发现",
+        "注意",
+        "狗"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4c376a2cab4c799efed2a25c4bad684e575aa0d19abe5f7fd6c49e077d94576d.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "379653d05dcccdae7595",
+      "sha256": "4c376a2cab4c799efed2a25c4bad684e575aa0d19abe5f7fd6c49e077d94576d",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-2335690b5c1707749e9c",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-2335690b5c1707749e9c.jpg",
+      "description": "柴犬：愣住了",
+      "emotion": "calm",
+      "tags": [
+        "震惊",
+        "愣住",
+        "什么",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4e7afbe642e0698cd686848d1a494a4263ecd2bb1076f2c899fabd70b8a5bc5f.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "2335690b5c1707749e9c",
+      "sha256": "4e7afbe642e0698cd686848d1a494a4263ecd2bb1076f2c899fabd70b8a5bc5f",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-5a4dc24582530091350d",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-5a4dc24582530091350d.jpg",
+      "description": "哈士奇：emmm，欲言又止",
+      "emotion": "calm",
+      "tags": [
+        "无语",
+        "尴尬",
+        "额",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/2cfd89a6dd3a8daca24e37f73dfeba95f56ea2b6a618cb7c9c9d2f207955d807.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "5a4dc24582530091350d",
+      "sha256": "2cfd89a6dd3a8daca24e37f73dfeba95f56ea2b6a618cb7c9c9d2f207955d807",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-f28baec36a96576386fb",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-f28baec36a96576386fb.jpg",
+      "description": "柴犬：我来啦，接住",
+      "emotion": "excited",
+      "tags": [
+        "拥抱",
+        "欢迎",
+        "来啦",
+        "抱抱",
+        "狗"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/08a82a465d80ede6147d7907c178db7d5f078d797bf68c8ede98feb1e41c3ab5.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-011",
+      "source_id": "f28baec36a96576386fb",
+      "sha256": "08a82a465d80ede6147d7907c178db7d5f078d797bf68c8ede98feb1e41c3ab5",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-5734716a33bb73611ff4",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-5734716a33bb73611ff4.gif",
+      "description": "猫猫震惊瞪大眼",
+      "emotion": "excited",
+      "tags": [
+        "震惊",
+        "居然",
+        "天哪",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/60159dc7ccbbcd5b9fe5d651ddd1e5278ccc0e5b1e5be164bd97a96967ddf6ad.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "5734716a33bb73611ff4",
+      "sha256": "60159dc7ccbbcd5b9fe5d651ddd1e5278ccc0e5b1e5be164bd97a96967ddf6ad",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-6450fc6d6fd673d18b15",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-6450fc6d6fd673d18b15.jpg",
+      "description": "猫：我的悲伤有这么大，自嘲",
+      "emotion": "sad",
+      "tags": [
+        "委屈",
+        "伤心",
+        "难过",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4ef6982b4a0b6bf9dd85653ac7ca922cb97133b8168cbecd39ccad3019896386.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "6450fc6d6fd673d18b15",
+      "sha256": "4ef6982b4a0b6bf9dd85653ac7ca922cb97133b8168cbecd39ccad3019896386",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-26a7dadcb8d3d7e08a2c",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-26a7dadcb8d3d7e08a2c.jpg",
+      "description": "猫：瘫会儿休息",
+      "emotion": "calm",
+      "tags": [
+        "休息",
+        "累",
+        "躺",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/43498ab2ac60e65ab0354519ab2832d63869b9a01432e189385bf1128cf20d31.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "26a7dadcb8d3d7e08a2c",
+      "sha256": "43498ab2ac60e65ab0354519ab2832d63869b9a01432e189385bf1128cf20d31",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-3954df61d9d102af3b39",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-3954df61d9d102af3b39.jpg",
+      "description": "猫：哭了，自嘲落泪",
+      "emotion": "sad",
+      "tags": [
+        "哭",
+        "难过",
+        "伤心",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/be86ab9d2176eb8b8d5058ba845747936a34f9594fc4aafaf2ccc0164e62dc50.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "3954df61d9d102af3b39",
+      "sha256": "be86ab9d2176eb8b8d5058ba845747936a34f9594fc4aafaf2ccc0164e62dc50",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-6059f4344ef6abac8593",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-6059f4344ef6abac8593.gif",
+      "description": "猫猫打哈欠",
+      "emotion": "calm",
+      "tags": [
+        "困",
+        "哈欠",
+        "睡觉",
+        "晚安",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/8d92a3889ca4d1df14750173d45eab5a8d7ff749993f7782382a76638e08ca7d.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "6059f4344ef6abac8593",
+      "sha256": "8d92a3889ca4d1df14750173d45eab5a8d7ff749993f7782382a76638e08ca7d",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-1436f20b36955ea7ec5f",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-1436f20b36955ea7ec5f.jpg",
+      "description": "猫问号：没听懂",
+      "emotion": "calm",
+      "tags": [
+        "没懂",
+        "为什么",
+        "啥",
+        "问号",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/d4b73df57cf01c812ae16b214da5c9e4c8b10752041624cc59d18ea6e768ee8a.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "1436f20b36955ea7ec5f",
+      "sha256": "d4b73df57cf01c812ae16b214da5c9e4c8b10752041624cc59d18ea6e768ee8a",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-059ce7a17da7c70d2208",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-059ce7a17da7c70d2208.png",
+      "description": "猫：喵瞪口呆",
+      "emotion": "excited",
+      "tags": [
+        "惊讶",
+        "不敢信",
+        "震惊",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/97b376cd7780ed1abbdc17f50cab7ce250e0846582f4d5a9f7d25163e907ff8c.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "059ce7a17da7c70d2208",
+      "sha256": "97b376cd7780ed1abbdc17f50cab7ce250e0846582f4d5a9f7d25163e907ff8c",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-86caa0df3873e6fe3059",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-86caa0df3873e6fe3059.gif",
+      "description": "猫猫左右摇摆跳舞",
+      "emotion": "happy",
+      "tags": [
+        "开心",
+        "庆祝",
+        "跳舞",
+        "高兴",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/d70291089a76e920936eddbc2fd0f271783b7633433eaab88e94a55976337b9b.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "86caa0df3873e6fe3059",
+      "sha256": "d70291089a76e920936eddbc2fd0f271783b7633433eaab88e94a55976337b9b",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-f3e3f7f590ce3b09d1a5",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-f3e3f7f590ce3b09d1a5.jpg",
+      "description": "猫猫爱心：温暖回应",
+      "emotion": "happy",
+      "tags": [
+        "谢谢",
+        "喜欢",
+        "爱心",
+        "暖",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/bcde8c1d448960a126fca5b1b8299d1aa14571d350273dcc1b20f5147a6d4218.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "f3e3f7f590ce3b09d1a5",
+      "sha256": "bcde8c1d448960a126fca5b1b8299d1aa14571d350273dcc1b20f5147a6d4218",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-bc67beea9c7e8cece5bb",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-bc67beea9c7e8cece5bb.png",
+      "description": "猫猫害羞脸红",
+      "emotion": "shy",
+      "tags": [
+        "害羞",
+        "夸",
+        "可爱",
+        "脸红",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/ee1d9ff07c215feb52a40f00f8a705ccb6514686ad738f49e95a8efc7650d00d.png",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "bc67beea9c7e8cece5bb",
+      "sha256": "ee1d9ff07c215feb52a40f00f8a705ccb6514686ad738f49e95a8efc7650d00d",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-625dc79fbc7f37258692",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-625dc79fbc7f37258692.jpg",
+      "description": "猫：惆怅发呆",
+      "emotion": "sad",
+      "tags": [
+        "惆怅",
+        "低落",
+        "失落",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/a70ef9069a22a99643b8a7cfe887800d0f8173e49a7cffa2a03ae7b8d11ef6dd.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "625dc79fbc7f37258692",
+      "sha256": "a70ef9069a22a99643b8a7cfe887800d0f8173e49a7cffa2a03ae7b8d11ef6dd",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-214e00d79536bb00c11d",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-214e00d79536bb00c11d.gif",
+      "description": "猫猫锤桌子：佯装生气",
+      "emotion": "annoyed",
+      "tags": [
+        "气",
+        "生气",
+        "过分",
+        "不满",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/cdf4eafa28b0945eab352d651cc45bd16abd57197b037496f1b4c27e1fb94ac6.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "214e00d79536bb00c11d",
+      "sha256": "cdf4eafa28b0945eab352d651cc45bd16abd57197b037496f1b4c27e1fb94ac6",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-e535b3a6d379ab9892f8",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-e535b3a6d379ab9892f8.jpg",
+      "description": "猫猫擦眼泪",
+      "emotion": "sad",
+      "tags": [
+        "落泪",
+        "委屈",
+        "哭",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/d568052f3595d648a3a3eb8fd8d3e07450e5e165fdf54b90f545493e4fa1f6f7.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "e535b3a6d379ab9892f8",
+      "sha256": "d568052f3595d648a3a3eb8fd8d3e07450e5e165fdf54b90f545493e4fa1f6f7",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-775d52562332d1beb056",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-775d52562332d1beb056.jpg",
+      "description": "猫：我累了",
+      "emotion": "calm",
+      "tags": [
+        "累",
+        "疲惫",
+        "休息",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/bdebae1f6bec690bde5739c9a3b0b593f1c976f3fee30f8a46ce7036b956031d.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "775d52562332d1beb056",
+      "sha256": "bdebae1f6bec690bde5739c9a3b0b593f1c976f3fee30f8a46ce7036b956031d",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-899fba622d3147e24fc0",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-899fba622d3147e24fc0.gif",
+      "description": "猫猫探头偷看",
+      "emotion": "playful",
+      "tags": [
+        "在吗",
+        "好奇",
+        "偷看",
+        "探头",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/4c90527aa77c543b740b84d1a194673541c86524a88466af8a789d3612f8a52d.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "899fba622d3147e24fc0",
+      "sha256": "4c90527aa77c543b740b84d1a194673541c86524a88466af8a789d3612f8a52d",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-3a4869ac3f37798cb591",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-3a4869ac3f37798cb591.gif",
+      "description": "猫猫舔爪爪：悠闲",
+      "emotion": "calm",
+      "tags": [
+        "悠闲",
+        "放松",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/6e7e8f03105c51dd71337ef321e5d903e872402f84996d5f83f7be005ac408b3.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "3a4869ac3f37798cb591",
+      "sha256": "6e7e8f03105c51dd71337ef321e5d903e872402f84996d5f83f7be005ac408b3",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-f87842c00696c61ee876",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-f87842c00696c61ee876.gif",
+      "description": "猫猫敲键盘：认真工作",
+      "emotion": "playful",
+      "tags": [
+        "写代码",
+        "工作",
+        "键盘",
+        "敲",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/7b7722b020d28155fc51fe4b9e681b43d2cf65616a6940a1f39c3b7d1dd3b383.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "f87842c00696c61ee876",
+      "sha256": "7b7722b020d28155fc51fe4b9e681b43d2cf65616a6940a1f39c3b7d1dd3b383",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-bfea455b34b756c5672b",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-bfea455b34b756c5672b.gif",
+      "description": "猫猫点头如捣蒜：赞同",
+      "emotion": "happy",
+      "tags": [
+        "赞同",
+        "同意",
+        "没错",
+        "好的",
+        "猫"
+      ],
+      "animated": true,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/67f948d09ac52fa13410b76d024ae95fabda7aa8dd03caf0e5b21e943a1e1a83.gif",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "bfea455b34b756c5672b",
+      "sha256": "67f948d09ac52fa13410b76d024ae95fabda7aa8dd03caf0e5b21e943a1e1a83",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-7887c476aac7d9430840",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-7887c476aac7d9430840.jpg",
+      "description": "猫：美滋滋",
+      "emotion": "happy",
+      "tags": [
+        "开心",
+        "满足",
+        "美滋滋",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/6355c0813eb834d4dc73bdedb5bb95914694afedc847d0c56aadc203172afcfd.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "7887c476aac7d9430840",
+      "sha256": "6355c0813eb834d4dc73bdedb5bb95914694afedc847d0c56aadc203172afcfd",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-ef499b56eb7d7dc040c7",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-ef499b56eb7d7dc040c7.jpg",
+      "description": "猫猫揣手手：乖巧等待",
+      "emotion": "calm",
+      "tags": [
+        "等",
+        "乖巧",
+        "听着",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/3cfd1fa9e097c9cf3474563918bd6bfdf112349f2e44a4892c1a3319ff355d1b.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "ef499b56eb7d7dc040c7",
+      "sha256": "3cfd1fa9e097c9cf3474563918bd6bfdf112349f2e44a4892c1a3319ff355d1b",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-a6af9b5a06b92987dc97",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-a6af9b5a06b92987dc97.jpg",
+      "description": "猫猫歪头疑惑",
+      "emotion": "calm",
+      "tags": [
+        "好奇",
+        "疑惑",
+        "为什么",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/8cf40771a911724e19b63d648c358b04af8820a1ebc1216df4bc22c19c5b58a7.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "a6af9b5a06b92987dc97",
+      "sha256": "8cf40771a911724e19b63d648c358b04af8820a1ebc1216df4bc22c19c5b58a7",
+      "reviewed_at": "2026-10-23"
+    },
+    {
+      "id": "meme-bqb-24910644a5efc1cf857a",
+      "kind": "community",
+      "presentation": "any",
+      "reviewed": true,
+      "file": "meme-24910644a5efc1cf857a.jpg",
+      "description": "猫：一起打哈欠吗",
+      "emotion": "calm",
+      "tags": [
+        "困",
+        "睡觉",
+        "哈欠",
+        "晚安",
+        "猫"
+      ],
+      "animated": false,
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source": "ChineseBQB",
+      "source_url": "https://zhaoolee.com/ChineseBQB/media/616d6289f2b25dae5ec012e08f89ab8457b637647dce6558378163957eff5bbc.jpg",
+      "source_page": "https://github.com/zhaoolee/ChineseBQB",
+      "source_category": "bqb-010",
+      "source_id": "24910644a5efc1cf857a",
+      "sha256": "616d6289f2b25dae5ec012e08f89ab8457b637647dce6558378163957eff5bbc",
+      "reviewed_at": "2026-10-23"
+    }
+  ]
+}

@@ -278,6 +278,7 @@ def create_container(settings: Settings) -> Container:
         return payload if isinstance(payload, dict) else None
 
     portrait_service = PortraitService(
+        emotion_provider=lambda scope: persona_service.emotions.current(scope.user_id, scope.agent_id),
         store=persona_store,
         settings=settings,
         sleep_score_store=sleep_score_store,
@@ -494,6 +495,7 @@ def create_container(settings: Settings) -> Container:
         settings.data_dir / "logs" / "proactive_gate.jsonl"
     )
     account_deletion_service = AccountDeletionService(
+        emotion_store=persona_service.emotions,
         report_store=report_store,
         event_memory_service=event_memory_service,
         schedule_service=schedule_service,

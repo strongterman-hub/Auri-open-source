@@ -22,6 +22,12 @@ data class FileUpload(
 class AuriApi(
     private val baseUrl: String = ApiConfig.BASE_URL,
 ) {
+    fun expressionPreferences(token: String): JSONObject = request("GET", "/persona/expressions", null, token)
+
+    fun updateExpressionPreferences(token: String, continuous: Boolean, stickers: Boolean): JSONObject =
+        request("PUT", "/persona/expressions", JSONObject().put("continuous_messages", continuous)
+            .put("stickers", stickers).toString(), token)
+
     fun createSession(userId: String, token: String): String {
         val body = JSONObject().put("user_id", userId).toString()
         val response = request("POST", "/sessions", body, token)
@@ -87,6 +93,7 @@ class AuriApi(
     ): JSONObject {
         val body = buildMessageBody(content, images, files)
             .put("client_message_id", clientMessageId)
+            .put("capabilities", org.json.JSONArray(listOf("message_sequence_v1", "stickers_v1")))
             .toString()
         // This endpoint only accepts/enqueues a message; model generation is polled separately.
         return request("POST", "/sessions/$sessionId/messages/async", body, token, 30_000)

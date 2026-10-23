@@ -52,6 +52,7 @@ data class ChatMessage(
     val isError: Boolean = false,
     val deliveryStatus: String = "sent",
     val pendingPayload: String = "",
+    val sticker: ChatSticker? = null,
     val timestamp: Long = System.currentTimeMillis(),
 )
 
@@ -166,6 +167,7 @@ private fun ChatMessage.toEntity(): ChatMessageEntity = ChatMessageEntity(
     isError = isError,
     deliveryStatus = deliveryStatus,
     pendingPayload = pendingPayload,
+    sticker = sticker?.encode().orEmpty(),
     timestamp = timestamp,
 )
 
@@ -180,6 +182,7 @@ private fun ChatMessageEntity.toMessage(): ChatMessage = ChatMessage(
     isError = isError,
     deliveryStatus = deliveryStatus,
     pendingPayload = pendingPayload,
+    sticker = parseChatSticker(sticker),
     timestamp = timestamp,
 )
 
@@ -360,7 +363,45 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var replyState by mutableStateOf("idle")
         private set
 
-    val isAuriTyping: Boolean get() = replyState == "typing"
+    val isAuriTyping: Boolean get() = replyState == "typing" || replyState == "delivering"
+    var continuousMessages by mutableStateOf(true)
+        private set
+    var stickersEnabled by mutableStateOf(true)
+        private set
+    var expressionSettingsLoaded by mutableStateOf(false)
+        private set
+    var expressionSettingsSaving by mutableStateOf(false)
+        private set
+    var expressionSettingsError by mutableStateOf<String?>(null)
+        private set
+
+    fun loadExpressionPreferences() {
+        val token = authStore.getToken() ?: return
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.expressionPreferences(token) } }
+                .onSuccess {
+                    continuousMessages = it.optBoolean("continuous_messages", true)
+                    stickersEnabled = it.optBoolean("stickers", true)
+                    expressionSettingsLoaded = true
+                    expressionSettingsError = null
+                }.onFailure { expressionSettingsError = "聊天表达设置暂时无法加载" }
+        }
+    }
+
+    fun updateExpressionPreferences(continuous: Boolean = continuousMessages, stickers: Boolean = stickersEnabled) {
+        if (expressionSettingsSaving) return
+        val token = authStore.getToken() ?: return
+        expressionSettingsSaving = true
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.updateExpressionPreferences(token, continuous, stickers) } }
+                .onSuccess {
+                    continuousMessages = it.optBoolean("continuous_messages", true)
+                    stickersEnabled = it.optBoolean("stickers", true)
+                    expressionSettingsError = null
+                }.onFailure { expressionSettingsError = "保存失败，请重试" }
+            expressionSettingsSaving = false
+        }
+    }
 
     var error by mutableStateOf<String?>(null)
         private set
@@ -553,6 +594,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         images = parsed.images,
                         files = parsed.files,
                         actions = parsed.actions,
+                        sticker = parsed.sticker,
                         isUser = role == "user",
                         isError = false,
                         timestamp = parseTimestamp(item.optString("timestamp")),
@@ -567,6 +609,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val images: List<String>,
         val files: List<ChatFile>,
         val actions: List<ChatAction>,
+        val sticker: ChatSticker? = null,
     )
 
     private fun parseServerMessageContent(item: JSONObject): ParsedContent {
@@ -579,9 +622,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val images = mutableListOf<String>()
             val files = mutableListOf<ChatFile>()
             val actions = mutableListOf<ChatAction>()
+            var sticker: ChatSticker? = null
             for (index in 0 until content.length()) {
                 val part = content.optJSONObject(index) ?: continue
                 when (part.optString("type")) {
+                    "sticker" -> sticker = parseChatSticker(part.toString())
                     "text" -> text.append(part.optString("text"))
                     "image_url" -> part.optJSONObject("image_url")
                         ?.optString("url")
@@ -611,7 +656,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            return ParsedContent(text.toString(), images, files, actions)
+            return ParsedContent(if (sticker == null) text.toString() else "", images, files, actions, sticker)
         }
         return ParsedContent("", emptyList(), emptyList(), emptyList())
     }
@@ -941,7 +986,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         replyState = json.optString("reply_state", "idle")
         nextChatPollMs = json.optLong("next_poll_ms", CHAT_IDLE_POLL_MS)
-            .coerceIn(CHAT_ACTIVE_POLL_MS, CHAT_IDLE_POLL_MS)
+            .coerceIn(500L, CHAT_IDLE_POLL_MS)
 
         val incoming = parseServerMessages(json.optJSONArray("messages"))
         val existingIds = _messages.mapTo(mutableSetOf()) { it.id }

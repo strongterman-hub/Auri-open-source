@@ -14,12 +14,21 @@ class ChatReplyScheduler:
         self.service = service
         self.tick_seconds = max(0.1, tick_seconds)
         self._task: asyncio.Task | None = None
+        self._delivery_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         if self._task is None:
             self._task = asyncio.create_task(self._run(), name="auri-chat-reply-scheduler")
+            self._delivery_task = asyncio.create_task(self._deliver(), name="auri-chat-outbox")
 
     async def stop(self) -> None:
+        if self._delivery_task is not None:
+            self._delivery_task.cancel()
+            try:
+                await self._delivery_task
+            except asyncio.CancelledError:
+                pass
+            self._delivery_task = None
         if self._task is None:
             return
         self._task.cancel()
@@ -28,6 +37,16 @@ class ChatReplyScheduler:
         except asyncio.CancelledError:
             pass
         self._task = None
+
+    async def _deliver(self) -> None:
+        while True:
+            try:
+                await self.service.deliver_one()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("outbox tick failed")
+            await asyncio.sleep(min(self.tick_seconds, 0.25))
 
     async def _run(self) -> None:
         while True:

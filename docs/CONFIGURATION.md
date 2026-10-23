@@ -89,6 +89,10 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - 提醒：`AURI_REMINDER_ENABLED` 默认 true，时区由 `AURI_REMINDER_TIMEZONE` 等配置控制。
 - 热点：`AURI_TRENDING_ENABLED` 默认 false，启用前先验证搜索来源。
 
+## 连续消息、情绪与表情
+
+Android 0.3.42 支持按账号关闭连续消息或表情。新客户端默认使用 `AURI_CHAT_EXPRESSION_ENABLED=true`、`AURI_CHAT_MESSAGE_GAP_SECONDS=1.4`；旧客户端保持单条回复。社区表情图片须由部署者主动导入，公开仓库只带来源清单和校验工具；GIF、消息恢复、角色性别隔离及验收边界见[表达功能](CHAT_EXPRESSION.md)。
+
 ## Credits 与支付宝
 
 本地默认 `AURI_BILLING_ENFORCEMENT_ENABLED=false`、`AURI_ALIPAY_ENABLED=false`。模型调用费用仍由供应商向你的账号收取，关闭内部扣费不是免费模型服务。

@@ -86,6 +86,7 @@ async def send_message_async(
         payload.content,
         payload.images,
         payload.files,
+        capabilities=payload.capabilities,
     )
     return AsyncSendMessageResponse(
         session_id=accepted_session.id,
@@ -107,7 +108,7 @@ async def chat_updates(
         raise NotFoundError(message=f"Session '{session_id}' was not found.")
     messages = await container.session_service.messages_after(session_id, after)
     reply_state, commands = container.chat_reply_service.updates(session_id)
-    next_poll_ms = 1_000 if reply_state == "typing" else (
+    next_poll_ms = 500 if reply_state == "delivering" else 1_000 if reply_state == "typing" else (
         2_000 if reply_state == "queued" else 10_000
     )
     return ChatUpdatesResponse(

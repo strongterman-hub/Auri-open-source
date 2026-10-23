@@ -440,6 +440,8 @@ class AgentService:
         response_style: str = "short",
         location_requester: LocationRequester | None = None,
         behavior_policy: dict | None = None,
+        defer_delivery: bool = False,
+        expression_prompt: str | None = None,
     ) -> tuple[AgentTurn, MemoryScope, Session, dict]:
         """Generate one complete reply for an already-persisted message batch."""
         if not message_ids:
@@ -451,7 +453,7 @@ class AgentService:
                 (
                     message
                     for message in session.messages
-                    if message.get("reply_job_id") == reply_job_id
+                    if message.get("role") == "assistant" and message.get("reply_job_id") == reply_job_id
                 ),
                 None,
             )
@@ -591,6 +593,7 @@ class AgentService:
             persona_id=persona_metadata.get("persona_id"),
             persona_version=persona_metadata.get("persona_version"),
             policy_flags=persona_metadata.get("policy_flags"),
+            expression_prompt=expression_prompt,
         )
         turn = await self.runner.run(context)
         assistant_content = self._assistant_message_content(turn.text, [], turn.tool_results)
@@ -600,13 +603,26 @@ class AgentService:
         assistant_message["reply_job_id"] = reply_job_id
         assistant_message["reply_to_message_ids"] = list(message_ids)
 
+        if defer_delivery:
+            # The outbox owns durability and user-visible delivery. A draft must
+            # never become conversation history, an open loop or a memory.
+            async with self._lock_for(session_id):
+                latest = await self.session_service.get(session_id)
+                latest.last_prompt_tokens = int(turn.usage.get("prompt_tokens") or 0)
+                if snapshot_session.summary_generation > latest.summary_generation:
+                    latest.summary = snapshot_session.summary
+                    latest.summary_cursor = snapshot_session.summary_cursor
+                    latest.summary_generation = snapshot_session.summary_generation
+                await self.session_service.save(latest)
+            return turn, scope, latest, assistant_message
+
         async with self._lock_for(session_id):
             latest = await self.session_service.get(session_id)
             existing_reply = next(
                 (
                     message
                     for message in latest.messages
-                    if message.get("reply_job_id") == reply_job_id
+                    if message.get("role") == "assistant" and message.get("reply_job_id") == reply_job_id
                 ),
                 None,
             )

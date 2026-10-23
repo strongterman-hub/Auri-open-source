@@ -1,5 +1,13 @@
 # 版本与验证记录
 
+## 2026-10-23 · Android 0.3.42 / code45
+
+- Added persistent bounded emotion, validated response plans and durable sequential delivery with interruption/restart handling. Existing clients remain compatible.
+- Added 48 reviewed community reaction meme records (16 GIFs), semantic candidate selection and recent-use deduplication; preserved gender-specific character reactions and account settings. Public source includes an explicit hash-checking importer and attribution metadata, not third-party image binaries.
+- Added Android sticker rendering, animated playback, aspect-ratio preservation, preview and Room 10→11 persistence.
+- Private/public server regression: 557/546 passed. Both Android channels: 29 JVM tests each, Debug/Release builds and lintVital. Isolated emulator and six fictional provider cases completed; no physical-device or real-account conversation acceptance is claimed.
+- See [behavior, configuration, sources and limits](CHAT_EXPRESSION.md).
+
 ## 2026-10-19：位置情境理解与纠错修复（服务端）
 
 - 场所包含与附近关系分离；父级需要几何覆盖证据，旧版地点缓存失效，跨坐标复用需验证场所边界。办公楼分类不代表用户公司，居住区不代表用户住处。
