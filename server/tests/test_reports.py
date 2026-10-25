@@ -35,7 +35,8 @@ def add_steps(container, uid, current=7, previous=7):
 
 
 def output():
-    return {'summary': '这一周的活动记录已经整理好了，回顾里有每天的变化，也可以一起看看接下来想保持什么。',
+    return {'title':'回看这一周的走动','story':{'topic_id':'activity','fact_keys':['STEPS.avg'],'note_ids':[]},
+            'summary': '这一周的活动记录已经整理好了，回顾里有每天的变化，也可以一起看看接下来想保持什么。',
             'html': '<section class="card"><h2>慢慢回看活动节奏</h2><p>记录覆盖 {{fact:STEPS.days}}，记录日平均 {{fact:STEPS.avg}}。</p>{{chart:STEPS:bar}}<table><tr><th>项目</th><th>记录</th></tr><tr><td>本周记录日均值</td><td>{{fact:STEPS.avg}}</td></tr></table><p>' + ('这些记录可以帮助回看这一周的活动。每天的步数与设备佩戴、同步情况都有关系，缺少记录的日期需要留空。可以先看看自己愿意保持的习惯，再选择一个适合日常的小调整。' * 5) + '</p></section>'}
 
 
@@ -105,7 +106,8 @@ def test_real_values_bound_to_html_and_summary(container):
     assert len(summary) <= 80 and '{{' not in document
     assert '<svg' in document and '<table' in document
     assert "default-src 'none'" in document
-    assert e['facts']['STEPS.avg'] in document
+    from app.reports.editorial import readable
+    assert readable(e['facts']['STEPS.avg']) in document
 
 
 @pytest.mark.parametrize('change', ['unknown_fact', 'raw_number', 'short', 'long_summary', 'unknown_chart'])
@@ -531,7 +533,7 @@ def test_content_review_feedback_rewrites_statistical_listing_with_bounded_calls
                 valid=self.reviews>1
                 return SimpleNamespace(finish_reason='stop',content=json.dumps({'valid':valid,'reason':'只有均值清单，缺少解释和对应行动' if not valid else '通过'},ensure_ascii=False))
             self.drafts.append(messages[:])
-            assert json.loads(messages[1]['content'])['insight_candidates']
+            assert json.loads(messages[1]['content'])['editorial']['candidates']
             return SimpleNamespace(finish_reason='stop',content=json.dumps(output(),ensure_ascii=False))
     model=ReviewModel();srv.llm=model
     row=srv.store.queue('u',str(START),str(END),'Asia/Shanghai')
@@ -649,8 +651,9 @@ def test_collect_exposes_previous_core_series_and_cross_domain_render_guard(cont
     e=collect_facts(container.health_service,'u',START,END,'Asia/Shanghai')
     assert e['previous_series']['RESTING_HEART_RATE']['values'][0]==65
     assert e['body_state_evidence']['synthesis_ready']
-    with pytest.raises(ValueError,match='missing_cross_domain_evidence'):render_output(output(),e)
-    value=output();value['html']+='<p>活动增加时，静息读数也从 {{fact:body.previous_week.RESTING_HEART_RATE.before}} 到 {{fact:body.previous_week.RESTING_HEART_RATE.after}}。</p>'
+    value=output();value['story']['topic_id']='body_state'
+    with pytest.raises(ValueError,match='missing_cross_domain_evidence'):render_output(value,e)
+    value['html']+='<p>活动增加时，静息读数也从 {{fact:body.previous_week.RESTING_HEART_RATE.before}} 到 {{fact:body.previous_week.RESTING_HEART_RATE.after}}。</p>'
     assert render_output(value,e)[1]
 
 

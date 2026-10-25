@@ -1,5 +1,13 @@
 # 版本与验证记录
 
+## 2026-10-25 · 健康周报内容版本 4（服务端）
+
+- 从睡眠质量、真实运动、静息读数、用户感受和个人历史中选择本期主要发现；保留联合分析，支持稳定周与局部记录的简短回顾。
+- 具体标题与聊天摘要先交付发现，详情解释依据；不固定章节，不凭轻微时长差制造睡眠问题，不把 AI 建议当作用户承诺。
+- 增加睡眠时间区间图和个人历史参照图，统一小时/分钟与整数步数显示，收起完整统计口径；保留事实引用、安全 HTML 和原模型审查。
+- 新生成内容标记版本 4，历史 ID、聊天消息和已保存正文保留，点击仍读取缓存。Android 保持 0.3.42/code45，无需新 APK。
+- 完成合成场景模型与窄屏页面检查；这些检查不代表真实用户打开率或阅读意愿已经提高，后续结合实际反馈观察。
+
 ## 2026-10-23 · Android 0.3.42 / code45
 
 - Added persistent bounded emotion, validated response plans and durable sequential delivery with interruption/restart handling. Existing clients remain compatible.

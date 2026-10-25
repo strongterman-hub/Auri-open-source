@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from zoneinfo import ZoneInfo
 from app.reports.insights import add_insight_candidates
+from app.reports.editorial import baseline_profile, prepare_editorial
 
 
 METRICS = {
@@ -55,12 +56,15 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
     if end >= local_now.date():
         raise ValueError('report_period_must_end_before_today')
     previous = start - timedelta(days=7)
-    metrics, samples = health.get_metrics(user_id, previous.isoformat(), end.isoformat(), timezone_name)
+    history_start = start - timedelta(days=28)
+    metrics, samples = health.get_metrics(user_id, history_start.isoformat(), end.isoformat(), timezone_name)
     days = [(start + timedelta(days=i)).isoformat() for i in range(7)]
     old_days = [(previous + timedelta(days=i)).isoformat() for i in range(7)]
+    history_days = [(history_start + timedelta(days=i)).isoformat() for i in range(28)]
     facts = {"period.start": start.isoformat(), "period.end": end.isoformat(), "period.timezone": timezone_name}
-    facts.update({f'DAY.{day}': day for day in [*old_days, *days]})
-    series, details, previous_series = {}, {}, {}
+    facts.update({f'DAY.{day}': day for day in [*history_days, *days]})
+    series, details, previous_series, historical_series = {}, {}, {}, {}
+    blocked_baseline = set()
 
     def add(key, label, unit, values, old_values, *, comparable=True):
         valid = [v for v in values if v is not None]
@@ -90,6 +94,9 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
         rows = {m.day: number(m.value1) for m in metrics if m.metric_type == key}
         vals = lambda ds: [None if rows.get(d) is None else number(rows[d] * factor) for d in ds]
         add(key, label, unit, vals(days), vals(old_days), comparable=key not in {"WEIGHT", "BODY_FAT"})
+        historical_series[key] = {'days': history_days, 'values': vals(history_days), 'unit': unit}
+        if len({getattr(m, 'source', None) for m in metrics if m.metric_type == key}) > 1:
+            blocked_baseline.add(key)
 
     zone = ZoneInfo(timezone_name)
     if health.sleep_score_service is not None:
@@ -97,7 +104,19 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
         nights = health.sleep_score_service._build_nights(all_sleep, zone)
         rows = {n.sleep_day: number(n.asleep_minutes) for n in nights}
         add("MAIN_SLEEP", "主睡眠实际睡着时长", "分钟", [rows.get(d) for d in days], [rows.get(d) for d in old_days])
+        historical_series['MAIN_SLEEP'] = {'days': history_days, 'values': [rows.get(d) for d in history_days], 'unit': '分钟'}
+        if len({getattr(s, 'source', None) for s in all_sleep if s.metric_type == 'SLEEP_SESSION'}) > 1:
+            blocked_baseline.add('MAIN_SLEEP')
         current = [n for n in nights if n.sleep_day in days]
+        sleep_windows = []
+        for n in current:
+            d = datetime.fromisoformat(n.sleep_day).date()
+            begin, finish = n.start_at.astimezone(zone), n.end_at.astimezone(zone)
+            sleep_windows.append({'day': n.sleep_day,
+                'start_minutes': (begin.date()-d).days*1440 + begin.hour*60+begin.minute,
+                'end_minutes': (finish.date()-d).days*1440 + finish.hour*60+finish.minute})
+            facts[f'BEDTIME.{n.sleep_day}'] = begin.strftime('%H:%M')
+            facts[f'WAKE.{n.sleep_day}'] = finish.strftime('%H:%M')
         if len(current) >= 3:
             # Noon-centred clock avoids midnight wrap-around (23:50 vs 00:10).
             bed = [((n.start_at.astimezone(zone).hour * 60 + n.start_at.astimezone(zone).minute - 720) % 1440) for n in current]
@@ -117,13 +136,20 @@ def collect_facts(health, user_id, start, end, timezone_name, scores_visible=Tru
                 rows[s.day] = rows.get(s.day, 0) + value
         add(key, label, unit, [rows.get(d) for d in days], [rows.get(d) for d in old_days], comparable=False)
     if scores_visible:
-        scores = health.get_sleep_scores(user_id, previous.isoformat(), end.isoformat(), timezone_name)
+        scores = health.get_sleep_scores(user_id, history_start.isoformat(), end.isoformat(), timezone_name)
         for key, attr, label in [("SLEEP_SCORE", "sleep_health", "睡眠健康分"), ("RECOVERY_SCORE", "recovery", "恢复分")]:
             eligible = [s for s in scores if s.calibration.state == "calibrated" and getattr(s, attr).score is not None and getattr(s, attr).confidence >= 60]
             versions = {s.meta.algorithm_version for s in eligible}
             rows = {s.sleep_day: getattr(s, attr).score for s in eligible}
             add(key, label, "分", [rows.get(d) for d in days], [rows.get(d) for d in old_days], comparable=len(versions) == 1)
+            historical_series[key] = {'days': history_days, 'values': [rows.get(d) for d in history_days], 'unit': '分'}
+            if len(versions) != 1:
+                blocked_baseline.add(key)
 
     facts["data.updated_at"] = updated_time([*metrics, *samples], zone)
-    return add_insight_candidates({"facts": facts, "series": series, "previous_series": previous_series, "coverage": details,
+    baseline = baseline_profile(historical_series, facts, blocked_baseline)
+    evidence = add_insight_candidates({"facts": facts, "series": series, "previous_series": previous_series, "coverage": details,
+            'historical_series': historical_series, 'baseline': baseline,
+            'sleep_windows': sleep_windows if health.sleep_score_service is not None else [],
             "rules": ["均值分母为有记录的有效日，缺失不等于零，数值零是有效记录而非无记录", "DAY.日期是日期标签；指标键.日期是当天测量值，不能当作日期", "主睡眠与午睡分开", "穿戴数据不能确诊或证明原因", "没有环比事实的指标不得声称比前期升降", "设备压力不等于本人主观压力", "睡眠与恢复评分分别解释"]})
+    return prepare_editorial(evidence)

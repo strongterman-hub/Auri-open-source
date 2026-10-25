@@ -97,6 +97,9 @@ def add_body_state_evidence(evidence):
 
 def generation_context(evidence):
     """Keep the source snapshot complete; focus model attention on joint evidence."""
+    if 'editorial' in evidence:
+        from app.reports.editorial import writer_context
+        return writer_context(evidence)
     if not evidence.get('body_state_evidence', {}).get('synthesis_ready'):
         return evidence
     context = {key: value for key, value in evidence.items()

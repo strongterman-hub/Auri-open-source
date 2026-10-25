@@ -20,6 +20,7 @@ Current Android release: **0.3.42 / versionCode 45**. [Chat expression](docs/CHA
 - **Memory:** durable user notes, structured events, temporal boundaries, correction relationships, gradual decay of ordinary details and rolling conversation summaries.
 - **Proactive contact:** source freshness, do-not-disturb gates, evidence checks, exposure acknowledgments, reply attribution, backoff and recovery probes.
 - **Persona and smart background:** female/male character cards, selectable presentation and personality in chat settings, time-/state-/weather-aware chat backgrounds with a character avatar. Rain, snow, summer and autumn variants are resolved from the latest weather observation. Public builds ship gradient placeholders instead of the real artwork.
+- **Weekly health reports:** useful chat summaries open a separate reader. Server content version 4 selects a personal main finding using sleep quality, workouts, user statements and historical references, with matching charts and shorter stable-week reports. Cached history is preserved; no APK update is needed. See [details](docs/HEALTH_WEEKLY_REPORTS.md).
 - **Optional health context:** experimental Xiaomi Health Cloud integration, normalized metrics, workout records, sleep and recovery scores. No medical diagnosis claims.
 - **Shared calendar:** month view, manual edits, chat-based reads and writes, recurring events, and scheduled reminders.
 - **Tools:** calendar, search, web pages, weather, location, calculations, conversions, dates, reminders and todos.

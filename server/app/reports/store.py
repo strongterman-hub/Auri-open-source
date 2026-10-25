@@ -72,6 +72,21 @@ class ReportStore:
         with self.connect() as db:
             return [dict(r) for r in db.execute('SELECT id,week_start,week_end,timezone,status,summary,created_at,updated_at,error,revision FROM weekly_reports WHERE user_id=? ORDER BY week_start DESC LIMIT 52', (user_id,))]
 
+    def topic_history(self, user_id, before):
+        with self.connect() as db:
+            rows = db.execute("SELECT id,week_start,evidence_json FROM weekly_reports WHERE user_id=? AND status='ready' AND week_end<? ORDER BY week_end DESC LIMIT 4", (user_id,before)).fetchall()
+        result = []
+        for row in rows:
+            try:
+                story = json.loads(row['evidence_json']).get('report_story', {})
+            except (ValueError,TypeError,AttributeError):
+                continue
+            if isinstance(story,dict) and story.get('topic_id'):
+                result.append({'report_id':row['id'],'week_start':row['week_start'],
+                               'topic_id':story['topic_id'],'title':str(story.get('title',''))[:180],
+                               'use':'仅检查主题重复，不是用户原话或新的健康事实'})
+        return result
+
     def pending(self):
         now = time.time()
         with self.connect() as db:
