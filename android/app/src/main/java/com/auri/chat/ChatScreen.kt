@@ -566,15 +566,22 @@ private fun MessageBubble(
         return
     }
     val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
+    // Keep the fill translucent while the text remains fully opaque. The muted
+    // user tint preserves contrast over bright portraits without a solid accent.
     val bubbleColor = when {
-        message.isUser -> MaterialTheme.colorScheme.primary
-        portraitActive -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
-        else -> MaterialTheme.colorScheme.surfaceVariant
+        message.isUser -> AuriTokens.UserMessageSurface.copy(
+            alpha = if (portraitActive) 0.68f else 0.80f,
+        )
+        portraitActive -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.80f)
     }
-    val bubbleBorder = if (!message.isUser && portraitActive) {
-        BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
-    } else {
-        null
+    val bubbleBorder = when {
+        message.isUser -> BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+        )
+        portraitActive -> BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+        else -> null
     }
     val bubbleShape = if (message.isUser) {
         RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)

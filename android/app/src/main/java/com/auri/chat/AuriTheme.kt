@@ -25,6 +25,7 @@ object AuriTokens {
     val SurfaceVariant = Color(0xFF191E2D)
     val Outline = Color(0xFF2A3145)
     val Primary = Color(0xFF8B5CF6)
+    val UserMessageSurface = Color(0xFF503E69)
     val Secondary = Color(0xFF2FD1A3)
     val Tertiary = Color(0xFFF5B45F)
     val Error = Color(0xFFFF6B6B)
