@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,25 +22,45 @@ class ReplyExpression:
         return "\n\n".join(self.messages)
 
 
-def parse_expression(raw: str) -> ReplyExpression:
-    text = (raw or "").strip()
-    candidate = text
-    if candidate.startswith("```json") and candidate.endswith("```"):
-        candidate = candidate[7:-3].strip()
-    if '"auri_reply"' not in candidate[:150]:
+class ExpressionFormatError(ValueError):
+    """A content-free diagnostic suitable for production logs."""
+
+
+def parse_expression(raw: str, *, require_plan: bool = False) -> ReplyExpression:
+    text = (raw or "").strip().lstrip("\ufeff").strip()
+    candidate = re.sub(r"\A```(?:\s*json)?\s*\n?([\s\S]*?)\s*```\Z", r"\1", text,
+                       flags=re.IGNORECASE).strip()
+    if '"auri_reply"' not in candidate and not require_plan:
         # Plain answers from older providers remain valid. Preserve long prose,
         # reports and code rather than mechanically cutting every sentence.
         return ReplyExpression(messages=[text] if text else [])
-    try:
-        data = json.loads(candidate)
-    except (ValueError, TypeError) as exc:
-        raise ValueError("invalid internal reply plan") from exc
+    # Decode complete envelopes wrapped in fences or explanatory prose. Never
+    # guess missing quotes/brackets or accept a truncated/ambiguous plan.
+    decoder = json.JSONDecoder()
+    plans = []
+    position = 0
+    while (start := candidate.find("{", position)) >= 0:
+        try:
+            value, end = decoder.raw_decode(candidate, start)
+        except (ValueError, TypeError):
+            position = start + 1
+            continue
+        position = end
+        if isinstance(value, dict) and "auri_reply" in value:
+            plans.append(value)
+    if len(plans) != 1:
+        reason = "ambiguous_plan" if plans else ("invalid_json" if '"auri_reply"' in candidate else "missing_plan")
+        raise ExpressionFormatError(reason)
+    data = plans[0]
     parts = data.get("messages")
-    if data.get("auri_reply") != 1 or not isinstance(parts, list) or not 1 <= len(parts) <= 4:
-        raise ValueError("invalid internal reply messages")
+    if type(data.get("auri_reply")) is not int or data["auri_reply"] != 1 or not isinstance(parts, list) or not 1 <= len(parts) <= 4:
+        raise ExpressionFormatError("invalid_messages")
     if any(not isinstance(p, str) or not p.strip() for p in parts):
-        raise ValueError("empty internal reply part")
+        raise ExpressionFormatError("empty_message")
     emotion = data.get("emotion") or {}
+    if require_plan and (not isinstance(emotion, dict) or emotion.get("name") not in EMOTIONS
+                         or not isinstance(emotion.get("reason"), str) or not emotion["reason"].strip()):
+        raise ExpressionFormatError("invalid_emotion")
     if not isinstance(emotion, dict) or emotion.get("name") not in EMOTIONS:
         emotion = {}
     else:

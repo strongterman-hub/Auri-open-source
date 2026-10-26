@@ -125,6 +125,79 @@ def test_estimate_tokens_and_thresholds() -> None:
     assert compressor.tail_token_budget == 75
 
 
+def test_unicode_and_provider_usage_trigger_compaction() -> None:
+    compressor = ContextCompressor(FakeLLM(), Settings(_env_file=None))
+    assert compressor.estimate_tokens("中文" * 100) >= 200
+    session = _session(message_count=2)
+    session.last_prompt_tokens = 118090
+    assert compressor.needs_compaction(session, "")
+
+
+def test_compacted_archive_does_not_count_again() -> None:
+    compressor = ContextCompressor(FakeLLM(), Settings(_env_file=None))
+    session = _session(message_count=1000)
+    session.mark_compacted("Facts only.", 998, 1)
+    assert compressor.estimate_prompt_tokens(session, "") < 5000
+    assert not compressor.needs_compaction(session, "")
+
+
+def test_recent_tail_is_bounded_and_transcript_stays_intact() -> None:
+    compressor = ContextCompressor(FakeLLM(), Settings(_env_file=None))
+    session = _session(message_count=100)
+    original = [dict(m) for m in session.messages]
+    result = asyncio_run(compressor.compact(session))
+    assert result is not None and result.cursor == 76
+    assert session.messages == original
+
+
+def test_pending_user_burst_is_never_absorbed() -> None:
+    compressor = ContextCompressor(FakeLLM(), Settings(_env_file=None))
+    session = _session(message_count=40)
+    session.messages.extend({"role": "user", "content": str(i)} for i in range(30))
+    result = asyncio_run(compressor.compact(session))
+    assert result is not None and result.cursor == 40
+
+
+def test_summary_failure_preserves_unsummarized_prefix() -> None:
+    class PartialLLM(FakeLLM):
+        async def complete(self, messages, tools=None, max_tokens=None):
+            if self.calls:
+                return LLMResponse(content="incomplete", finish_reason="length")
+            return await super().complete(messages, tools, max_tokens)
+    llm = PartialLLM()
+    compressor = ContextCompressor(llm, _settings(compression_chunk_tokens=250))
+    session = _session()
+    result = asyncio_run(compressor.compact(session))
+    assert result is not None and result.cursor == 2
+    assert len(session.messages) == 20
+
+
+def test_single_large_message_is_absorbed_in_bounded_fragments() -> None:
+    llm = FakeLLM()
+    compressor = ContextCompressor(llm, _settings(compression_chunk_tokens=1200))
+    session = _session(message_count=2)
+    session.messages[0]["content"] = "汉" * 2000
+    result = asyncio_run(compressor.compact(session))
+    assert result is not None and result.cursor == 1
+    assert len(llm.calls) >= 4
+    assert all(len(call[1]["content"]) < 1000 for call in llm.calls)
+
+
+def test_checkpoint_only_advances_successful_chunks() -> None:
+    checkpoints = []
+    compressor = ContextCompressor(FakeLLM(), _settings(compression_chunk_tokens=1200))
+    result = asyncio_run(compressor.compact(_session(), on_checkpoint=checkpoints.append))
+    assert result is not None and len(checkpoints) > 1
+    assert checkpoints[-1] == result
+    assert [c.cursor for c in checkpoints] == sorted({c.cursor for c in checkpoints})
+
+
+def test_fact_handoff_excludes_old_assistant_behavior() -> None:
+    from app.agent.context_compressor import SUMMARY_SYSTEM_PROMPT
+    assert "never infer preferences from the assistant's old wording" in SUMMARY_SYSTEM_PROMPT
+    assert "old assistant tone" in SUMMARY_SYSTEM_PROMPT
+
+
 def test_compact_advances_cursor_and_preserves_tail() -> None:
     compressor = ContextCompressor(FakeLLM(), _settings())
     session = _session()

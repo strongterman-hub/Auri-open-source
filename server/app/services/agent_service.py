@@ -502,6 +502,15 @@ class AgentService:
         snapshot_session, history, summary = await self._maybe_compact(
             snapshot_session, memory_prompt
         )
+        if snapshot_session.summary_generation > session.summary_generation:
+            # Persist a successful handoff even if final reply generation later
+            # fails; otherwise retries repeatedly summarize the same archive.
+            async with self._lock_for(session_id):
+                latest = await self.session_service.get(session_id)
+                if snapshot_session.summary_generation > latest.summary_generation:
+                    latest.mark_compacted(snapshot_session.summary, snapshot_session.summary_cursor,
+                                          snapshot_session.summary_generation)
+                    await self.session_service.save(latest)
         llm_history: list[dict] = []
         for message in history:
             resolved = await self._resolve_llm_content(message.get("content"))
@@ -962,8 +971,7 @@ class AgentService:
         if self.compressor is None:
             return session, session.tail_messages(), session.summary
 
-        prompt_tokens = self.compressor.estimate_prompt_tokens(session, memory_prompt)
-        if not self.compressor.should_compress(prompt_tokens):
+        if not self.compressor.needs_compaction(session, memory_prompt):
             return session, session.tail_messages(), session.summary
 
         result = await self.compressor.compact(session)

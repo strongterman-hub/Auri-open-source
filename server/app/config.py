@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     compression_min_summary_tokens: int = 2000
     compression_max_summary_tokens: int = 4000
     compression_summary_model: str | None = None
+    compression_tail_max_messages: int = Field(default=24, ge=2)
+    compression_tail_max_tokens: int = Field(default=6000, ge=100)
+    compression_chunk_tokens: int = Field(default=12000, ge=100)
 
     # Session reset policy. Time is a hygiene axis, not the primary session
     # boundary; see the handoff planning doc. `none` keeps the long-chat model.

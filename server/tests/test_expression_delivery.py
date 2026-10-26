@@ -118,7 +118,7 @@ def test_unanswered_inputs_are_transferred_when_user_interrupts(tmp_dir):
 def test_grounding_checks_plain_text_and_discards_fragments_after_rewrite():
     class LLM:
         async def complete(self, *a, **kw):
-            return LLMResponse(content='{"auri_reply":1,"messages":["错误数字", "第二条"]}')
+            return LLMResponse(content='{"auri_reply":1,"messages":["错误数字", "第二条"],"emotion":{"name":"calm","reason":"回应本轮问题"}}')
     class Grounded(BasicAgentRunner):
         async def _ground_reply(self, context, draft, *args):
             assert draft == "错误数字\n\n第二条"

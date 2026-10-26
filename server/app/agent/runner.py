@@ -231,6 +231,17 @@ def _system_content(context: AgentRunContext) -> str:
         )
     if context.expression_prompt:
         content += "\n\n" + context.expression_prompt
+        content += (
+            "\n[CURRENT EXPRESSION RULES]\n"
+            "Historical assistant replies and summaries are factual background, "
+            "not demonstrations of today's tone, message count, emotion or format. "
+            "Use the active persona, explicit user preferences and this turn's reply "
+            "plan. Old single-message/plain-text replies do not override that plan. "
+            "Ground emotional wording in confirmed facts: an achievement alone does "
+            "not establish prior effort, staying up late, anxiety or preparation. "
+            "For 'I passed the exam', celebrate the result without inventing a story "
+            "about how the user studied."
+        )
     return (
         content
         + "\n\n"
@@ -568,6 +579,7 @@ automatically a correction and does not require an apology or abandoning an earl
         response_chars: int,
         model: str | None = None,
         grounding: dict | None = None,
+        expression_audit: dict | None = None,
     ) -> None:
         if self.turn_logger is None:
             return
@@ -590,6 +602,7 @@ automatically a correction and does not require an apology or abandoning an earl
                 "persona_version": context.persona_version,
                 "policy_flags": context.policy_flags,
                 "grounding": grounding,
+                "expression": expression_audit,
                 "situation": context.current_situation.audit_dict() if context.current_situation else None,
             }
         )
@@ -633,9 +646,51 @@ automatically a correction and does not require an apology or abandoning an earl
                 messages.append(self._assistant_message(response))
                 text = response.content or ""
                 expression = None
+                expression_audit = None
                 if context.expression_prompt:
-                    from app.chat.expression import parse_expression
-                    expression = parse_expression(text)
+                    from app.chat.expression import ExpressionFormatError, parse_expression
+                    expression_audit = {"status": "valid", "wrapped": not text.lstrip().startswith("{")}
+                    try:
+                        if response.finish_reason == "length":
+                            raise ExpressionFormatError("truncated_plan")
+                        expression = parse_expression(text, require_plan=True)
+                    except ExpressionFormatError as exc:
+                        # Repair the final answer only. Do not replay the tool
+                        # loop (or its side effects) for a formatting error.
+                        expression_audit = {
+                            "status": "repairing", "reason": str(exc),
+                            "response_chars": len(text),
+                            "finish_reason": response.finish_reason,
+                            "wrapped": not text.lstrip().startswith("{"),
+                        }
+                        repair_messages = [*messages, {
+                            "role": "user",
+                            "content": (
+                                "Reformat ONLY your last answer as the required AURI INTERNAL "
+                                "REPLY PLAN JSON. Preserve its factual content and conclusions; "
+                                "do not run tools, add claims, or repeat any action. Return a "
+                                "complete JSON object with messages, emotion and sticker_id. "
+                                "Use no code fence or explanatory prefix."
+                            ),
+                        }]
+                        try:
+                            with token_context(kind="expression_repair", session_id=context.session_id,
+                                               user_id=context.scope.user_id):
+                                repaired = await self.llm.complete_structured(repair_messages, max_tokens=4096)
+                            llm_calls += 1
+                            self._accumulate(totals, repaired.usage)
+                            if repaired.finish_reason == "length":
+                                raise ExpressionFormatError("truncated_repair")
+                            expression = parse_expression(repaired.content, require_plan=True)
+                            expression_audit["status"] = "repaired"
+                        except Exception as repair_error:
+                            expression_audit["status"] = "failed"
+                            expression_audit["repair_error"] = (str(repair_error) if isinstance(
+                                repair_error, ExpressionFormatError) else type(repair_error).__name__)
+                            self._log_turn(context, started_at=started_at, llm_calls=llm_calls,
+                                           tool_calls=tool_logs, totals=totals, status="expression_failed",
+                                           response_chars=0, model=model, expression_audit=expression_audit)
+                            raise
                     text = expression.text
                 original_text = text
                 grounding = {}
@@ -652,6 +707,7 @@ automatically a correction and does not require an apology or abandoning an earl
                     response_chars=len(text),
                     grounding=grounding,
                     model=model,
+                    expression_audit=expression_audit,
                 )
                 if expression is not None and text != original_text:
                     # Grounding may rewrite facts. Never deliver pre-check fragments.
@@ -722,7 +778,7 @@ automatically a correction and does not require an apology or abandoning an earl
         self,
         context: AgentRunContext,
     ) -> AsyncIterator[AgentStreamEvent]:
-        if self.grounding_check:
+        if self.grounding_check or context.expression_prompt:
             # Buffer until verification so an incorrect draft is never streamed.
             turn = await self.run(context)
             if turn.text:
