@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from app.session.models import Session, SessionCreate
+from app.core.errors import ServiceUnavailableError
+
+logger = logging.getLogger("auri.sessions")
 
 
 class SessionStore(ABC):
@@ -44,12 +48,13 @@ class FileSessionStore(SessionStore):
 
     def _read(self, session_id: str) -> Session | None:
         path = self._path(session_id)
-        if not path.exists():
-            return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except FileNotFoundError:
             return None
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.error("session_read_failed session=%s error=%s", session_id, type(exc).__name__)
+            raise ServiceUnavailableError(message="会话暂时无法读取，请稍后重试。") from exc
         return Session.model_validate(payload)
 
     def _write(self, session: Session) -> Session:

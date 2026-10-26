@@ -59,3 +59,20 @@ target transcript, memory files, billing data and other sessions were verified
 unchanged during migration. No Android build or account test chat was sent.
 The change applies to replies after user messages; proactive messages and
 independent reminders retain their existing delivery paths.
+
+## Follow-up: preserve the service user's access
+
+The first migration wrote its replacement session as root with mode 0600. The
+application runs as `www`; root-only acceptance could read the file while the
+actual service could not. `FileSessionStore` then swallowed PermissionError and
+reported the session as missing. The original transcript and handoff were intact.
+The file owner was restored to the session directory's service owner without
+changing file contents, immediately restoring access.
+
+The migration now preserves the original UID, GID and mode before atomic
+replacement. Read failures other than a missing file return a temporary-service
+error and an internal diagnostic instead of a misleading 404. A Linux regression
+ran root migration on an isolated service-owned session, verified ownership and
+mode, then read and saved it as the real `www` user. The production account was
+also loaded as `www`, with read/write access verified. This is necessary in
+addition to root smoke tests and general health checks.

@@ -1,5 +1,7 @@
 import json
 import asyncio
+import os
+import stat
 
 import pytest
 
@@ -35,6 +37,30 @@ def test_apply_keeps_archive_appended_messages_and_memory(tmp_dir):
     assert saved.summary == "confirmed facts" and result["transcript_unchanged"]
     assert (tmp_dir / "backup" / "s.json").read_bytes() == before
     assert memory.read_text() == '["remember me"]'
+
+
+def test_apply_preserves_access_mode(tmp_dir):
+    _session, path, cp = candidate(tmp_dir)
+    os.chmod(path, 0o640)
+    original = path.stat()
+    apply(tmp_dir, cp, tmp_dir / "backup")
+    current = path.stat()
+    assert stat.S_IMODE(current.st_mode) == stat.S_IMODE(original.st_mode)
+    assert (current.st_uid, current.st_gid) == (original.st_uid, original.st_gid)
+
+
+@pytest.mark.skipif(os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() != 0,
+                    reason="requires POSIX root to simulate root maintenance of a service-owned file")
+def test_root_migration_preserves_service_owner(tmp_dir):
+    import pwd
+    _session, path, cp = candidate(tmp_dir)
+    service_user = pwd.getpwnam("nobody")
+    os.chown(path, service_user.pw_uid, service_user.pw_gid)
+    os.chmod(path, 0o600)
+    apply(tmp_dir, cp, tmp_dir / "backup")
+    current = path.stat()
+    assert (current.st_uid, current.st_gid) == (service_user.pw_uid, service_user.pw_gid)
+    assert stat.S_IMODE(current.st_mode) == 0o600
 
 
 @pytest.mark.parametrize("changed", ["history", "summary"])

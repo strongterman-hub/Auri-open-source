@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import os
+import stat
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,7 @@ def apply(data_dir: Path, candidate_path: Path, backup_dir: Path) -> dict:
         raise ValueError("invalid_handoff_generation")
     original_messages_hash = fingerprint(session.messages)
     path = data_dir / "sessions" / f"{session.id}.json"
+    original_stat = path.stat()
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup = backup_dir / path.name
     with backup.open("xb") as handle:
@@ -111,7 +113,13 @@ def apply(data_dir: Path, candidate_path: Path, backup_dir: Path) -> dict:
     }
     temporary = path.with_suffix(".handoff.tmp")
     temporary.write_text(session.model_dump_json(indent=2), encoding="utf-8")
-    os.chmod(temporary, 0o600)
+    # Maintenance may run as root while the application runs as another user.
+    # Atomic replacement must preserve the original file's access identity.
+    if hasattr(os, "chown"):
+        temporary_stat = temporary.stat()
+        if (temporary_stat.st_uid, temporary_stat.st_gid) != (original_stat.st_uid, original_stat.st_gid):
+            os.chown(temporary, original_stat.st_uid, original_stat.st_gid)
+    os.chmod(temporary, stat.S_IMODE(original_stat.st_mode))
     os.replace(temporary, path)
     saved = read_session(data_dir, session.id)
     assert fingerprint(saved.messages) == original_messages_hash
